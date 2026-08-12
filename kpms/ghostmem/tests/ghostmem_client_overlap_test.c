@@ -27,6 +27,18 @@ int main(void)
     CHECK(ranges_overlap(0x1000, 0x1000, 0x2000, 0x3000) == 0, "page-aligned adjacent");
     CHECK(ranges_overlap(0x1000, 0x1000, 0x1000, 0x2000) == 1, "page-aligned shared start");
 
+    /* parse_prot：--prot 字符串 → 位掩码 */
+    CHECK(parse_prot("rwx") == (GHOSTMEM_PROT_READ | GHOSTMEM_PROT_WRITE | GHOSTMEM_PROT_EXEC),
+          "parse rwx");
+    CHECK(parse_prot("r--") == GHOSTMEM_PROT_READ, "parse r");
+    CHECK(parse_prot("rx") == (GHOSTMEM_PROT_READ | GHOSTMEM_PROT_EXEC), "parse rx");
+    CHECK(parse_prot("w") == GHOSTMEM_PROT_WRITE, "parse w");
+    /* 空/未知：默认 RWX */
+    CHECK(parse_prot("") == (GHOSTMEM_PROT_READ | GHOSTMEM_PROT_WRITE | GHOSTMEM_PROT_EXEC),
+          "empty -> RWX default");
+    CHECK(parse_prot("zzz") == (GHOSTMEM_PROT_READ | GHOSTMEM_PROT_WRITE | GHOSTMEM_PROT_EXEC),
+          "unknown -> RWX default");
+
     printf("failures=%d\n", failures);
     return failures ? 1 : 0;
 }
