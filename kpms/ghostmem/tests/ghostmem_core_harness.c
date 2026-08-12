@@ -278,6 +278,29 @@ int main(void)
         CHECK(ghostmem_do_info(&mm, (void *)&st, 4) == -EINVAL, "info len too small rejected");
     }
 
+    /* 8. args 应用：base=/limit= 修改扫描范围 → 空洞查找行为变化 */
+    {
+        unsigned long orig_base = gh_scan_base;
+        unsigned long orig_limit = gh_scan_limit;
+        /* base 前移到 0x20000000（heap 附近）：空洞查找应从新 base 起 */
+        ghostmem_apply_args("base=0x20000000 limit=0x30000000");
+        CHECK(gh_scan_base == 0x20000000UL, "args base applied");
+        CHECK(gh_scan_limit == 0x30000000UL, "args limit applied");
+        {
+            /* 新范围内：heap [0x10000000,0x10004000) 在 base 之前 →
+             * 从 0x20000000 起的空洞即新 base 本身 */
+            unsigned long hole = gh_find_hole(&mm, 0x1000);
+            CHECK(hole == 0x20000000UL, "hole starts at new base");
+        }
+        /* 恢复默认 */
+        ghostmem_apply_args("base=0x100000000 limit=0x7000000000");
+        CHECK(gh_scan_base == orig_base && gh_scan_limit == orig_limit,
+              "args restore to defaults");
+        /* NULL args：不变 */
+        ghostmem_apply_args(NULL);
+        CHECK(gh_scan_base == orig_base, "NULL args no-op");
+    }
+
     printf("failures=%d\n", failures);
     return failures ? 1 : 0;
 }

@@ -325,6 +325,36 @@ int ghostmem_do_info(void *mm, void __user *buf, unsigned long len)
     return ghostmem_copy_to_user_via_pte(buf, &stats, sizeof(stats));
 }
 
+void ghostmem_apply_args(const char *args)
+{
+    if (!args)
+        return;
+    {
+        const char *p = args;
+        while (*p) {
+            while (*p == ' ' || *p == ',')
+                p++;
+            if (!strncmp(p, "base=", 5)) {
+                unsigned long v;
+                if (gh_parse_hex(p + 5, &v))
+                    gh_scan_base = v;
+                p += 5;
+            } else if (!strncmp(p, "limit=", 6)) {
+                unsigned long v;
+                if (gh_parse_hex(p + 6, &v))
+                    gh_scan_limit = v;
+                p += 6;
+            } else {
+                p++;
+            }
+            while (*p && *p != ' ' && *p != ',')
+                p++;
+        }
+        pr_info("ghostmem: scan base=0x%lx limit=0x%lx\n", gh_scan_base, gh_scan_limit);
+    }
+}
+
+
 /* ========== prctl hook ========== */
 #ifndef GHOSTMEM_CORE_HARNESS
 
@@ -452,36 +482,15 @@ void exit_mmap_before_gh(hook_fargs1_t *args, void *udata)
 
 /* ========== Module init/exit ========== */
 
+/* 可选启动参数：base=<hex> limit=<hex> 覆盖扫描范围（真机冲突时调整）。
+ * 独立函数便于 host 执行级测试（core harness）。 */
 static long ghostmem_init(const char *args, const char *event, void *__user reserved)
 {
     int ret;
 
     pr_info("ghostmem: initializing...\n");
 
-    /* 可选启动参数：base=<hex> limit=<hex> 覆盖扫描范围（真机冲突时调整） */
-    if (args) {
-        const char *p = args;
-        while (*p) {
-            while (*p == ' ' || *p == ',')
-                p++;
-            if (!strncmp(p, "base=", 5)) {
-                unsigned long v;
-                if (gh_parse_hex(p + 5, &v))
-                    gh_scan_base = v;
-                p += 5;
-            } else if (!strncmp(p, "limit=", 6)) {
-                unsigned long v;
-                if (gh_parse_hex(p + 6, &v))
-                    gh_scan_limit = v;
-                p += 6;
-            } else {
-                p++;
-            }
-            while (*p && *p != ' ' && *p != ',')
-                p++;
-        }
-        pr_info("ghostmem: scan base=0x%lx limit=0x%lx\n", gh_scan_base, gh_scan_limit);
-    }
+    ghostmem_apply_args(args);
 
     ret = ghostmem_resolve_symbols();
     if (ret < 0)

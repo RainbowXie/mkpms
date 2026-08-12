@@ -247,6 +247,9 @@ int ghostmem_write_pages(void *mm, unsigned long va, const void *kbuf, unsigned 
 
 /* ========== ghostmem.c interfaces ========== */
 
+/* 应用 init 启动参数（base=/limit= hex），host 可测 */
+void ghostmem_apply_args(const char *args);
+
 int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,
                       unsigned long *out_va);
 int ghostmem_do_free(void *mm, unsigned long va);
