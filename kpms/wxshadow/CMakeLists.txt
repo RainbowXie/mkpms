@@ -40,3 +40,7 @@ add_test(NAME wxshadow_tlb_test COMMAND wxshadow_tlb_test)
 # wxshadow task 链表遍历（字节偏移算术，历史 bug 回归）
 add_executable(wxshadow_next_task_test tests/wxshadow_next_task_test.c)
 add_test(NAME wxshadow_next_task_test COMMAND wxshadow_next_task_test)
+
+# wxshadow 地址翻译助手（is_kva / v↔p 三模式）
+add_executable(wxshadow_addr_test tests/wxshadow_addr_test.c)
+add_test(NAME wxshadow_addr_test COMMAND wxshadow_addr_test)
