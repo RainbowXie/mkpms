@@ -22,6 +22,7 @@ mkpms / SeamlessHook 项目的技术文档索引。
 
 - mkpms：`ctest` — `ghostmem_abi_test`（12 断言）、`ghostmem_client_overlap_test`（8 断言）；`tools/ghostlinker` — `ghostlinker_test`（12 断言）
 - rustFrida：`lz4_block`（7 测试含 lz4_flex 互操作）、`ghostmem.rs`（5 测试）、`trace-decoder`（多块 roundtrip + 端到端）
+- **回归基线（Iteration 21 终检）**：跨套件全部通过 —— mkpms 2/2、ghostlinker 1/1、rustFrida 10/10、trace-decoder 1/1（共 24 项断言 + 2 端到端）
 
 ## 关联仓库
 
