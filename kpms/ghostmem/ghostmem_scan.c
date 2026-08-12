@@ -54,9 +54,28 @@ int ghostmem_resolve_symbols(void)
     GH_RESOLVE(mmput);
     GH_RESOLVE(__get_free_pages);
     GH_RESOLVE(free_pages);
-    GH_RESOLVE(kzalloc);
     GH_RESOLVE(kfree);
-    GH_RESOLVE(copy_from_kernel_nofault);
+
+    /* kzalloc 后备链（wxshadow 同款：新版内核符号名变化时仍可解析） */
+    kfunc_kzalloc = (typeof(kfunc_kzalloc))gh_lookup_name("kzalloc");
+    if (!kfunc_kzalloc)
+        kfunc_kzalloc = (typeof(kfunc_kzalloc))gh_lookup_name("__kmalloc");
+    if (!kfunc_kzalloc)
+        kfunc_kzalloc = (typeof(kfunc_kzalloc))gh_lookup_name("kmalloc_trace");
+    if (!kfunc_kzalloc) {
+        pr_err("ghostmem: kzalloc/__kmalloc not found\n");
+        return -1;
+    }
+
+    /* 安全内存读后备链 */
+    kfunc_copy_from_kernel_nofault =
+        (typeof(kfunc_copy_from_kernel_nofault))gh_lookup_name("copy_from_kernel_nofault");
+    if (!kfunc_copy_from_kernel_nofault)
+        kfunc_copy_from_kernel_nofault =
+            (typeof(kfunc_copy_from_kernel_nofault))gh_lookup_name("probe_kernel_read");
+    if (!kfunc_copy_from_kernel_nofault) {
+        pr_warn("ghostmem: no safe memory read, direct access fallback in helpers\n");
+    }
 
     /* rcu_read_lock 是 inline 宏，vmlinux 导出符号为 __rcu_read_lock（wxshadow 同款） */
     kfunc_rcu_read_lock = (void *)gh_lookup_name("__rcu_read_lock");
