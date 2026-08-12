@@ -26,6 +26,13 @@
 #define CLIENT_PROT_W  0x2
 #define CLIENT_PROT_X  0x4
 
+/* ghostlinker（tools/ghostlinker/ghostlinker.c）副本常量 */
+#define LINKER_ALLOC  0x47474d01
+#define LINKER_FREE   0x47474d02
+#define LINKER_PROT_R 0x1
+#define LINKER_PROT_W 0x2
+#define LINKER_PROT_X 0x4
+
 static int failures = 0;
 
 #define CHECK(cond, msg) \
@@ -38,6 +45,13 @@ int main(void)
     CHECK(PR_GHOSTMEM_ALLOC == CLIENT_ALLOC, "ALLOC == 0x47474d01");
     CHECK(PR_GHOSTMEM_FREE == CLIENT_FREE, "FREE == 0x47474d02");
     CHECK(PR_GHOSTMEM_INFO == CLIENT_INFO, "INFO == 0x47474d03");
+
+    /* 1b. ghostlinker 副本对齐（三向） */
+    CHECK(PR_GHOSTMEM_ALLOC == LINKER_ALLOC, "linker ALLOC aligned");
+    CHECK(PR_GHOSTMEM_FREE == LINKER_FREE, "linker FREE aligned");
+    CHECK(GHOSTMEM_PROT_READ == LINKER_PROT_R &&
+          GHOSTMEM_PROT_WRITE == LINKER_PROT_W &&
+          GHOSTMEM_PROT_EXEC == LINKER_PROT_X, "linker PROT bits aligned");
 
     /* 2. PROT 位：内核头与客户端副本一致 */
     CHECK(GHOSTMEM_PROT_READ == CLIENT_PROT_R, "PROT_READ == 0x1");
