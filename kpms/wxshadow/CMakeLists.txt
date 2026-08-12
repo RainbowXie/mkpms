@@ -64,3 +64,7 @@ add_test(NAME wxshadow_tasks_offset_test COMMAND wxshadow_tasks_offset_test)
 # wxshadow vdso 检测用户指针筛选 + ELF 魔数逻辑
 add_executable(wxshadow_vdso_test tests/wxshadow_vdso_test.c)
 add_test(NAME wxshadow_vdso_test COMMAND wxshadow_vdso_test)
+
+# wxshadow copy_from_user_via_pte 页边界检查
+add_executable(wxshadow_copy_from_user_pte_test tests/wxshadow_copy_from_user_pte_test.c)
+add_test(NAME wxshadow_copy_from_user_pte_test COMMAND wxshadow_copy_from_user_pte_test)
