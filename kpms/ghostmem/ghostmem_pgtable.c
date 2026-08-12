@@ -22,7 +22,7 @@
  * 表页由 ARM64 表 walker 读取：写入表描述符后必须 dc cvau，否则
  * walker 可能读到脏 dcache 行（尤其跨核 / 无缓存一致性场景）。
  */
-#ifdef GHOSTMEM_PGTABLE_HARNESS
+#if defined(GHOSTMEM_PGTABLE_HARNESS) || defined(GHOSTMEM_CORE_HARNESS)
 static void ghostmem_flush_kern_dcache(unsigned long kva, unsigned long size)
 {
     (void)kva; (void)size; /* harness: 架构指令不可用 */
@@ -146,7 +146,7 @@ static u64 *ghostmem_get_or_create_pte(void *mm, unsigned long addr)
  */
 static void ghostmem_tlbi_broadcast(unsigned long addr)
 {
-#ifdef GHOSTMEM_PGTABLE_HARNESS
+#if defined(GHOSTMEM_PGTABLE_HARNESS) || defined(GHOSTMEM_CORE_HARNESS)
     (void)addr;
 #else
     asm volatile("tlbi vaale1is, %0" : : "r"(addr >> GHOSTMEM_PAGE_SHIFT) : "memory");
@@ -159,7 +159,7 @@ static void ghostmem_flush_range(unsigned long va, unsigned long nr_pages)
 
     for (i = 0; i < nr_pages; i++)
         ghostmem_tlbi_broadcast(va + i * GHOSTMEM_PAGE_SIZE);
-#ifndef GHOSTMEM_PGTABLE_HARNESS
+#if !defined(GHOSTMEM_PGTABLE_HARNESS) && !defined(GHOSTMEM_CORE_HARNESS)
     asm volatile("dsb ish" : : : "memory");
     asm volatile("isb" : : : "memory");
 #endif
@@ -314,7 +314,7 @@ static void ghostmem_reclaim_tables(void *mm, unsigned long va)
                 *pgd = 0;
             }
         }
-#ifndef GHOSTMEM_PGTABLE_HARNESS
+#if !defined(GHOSTMEM_PGTABLE_HARNESS) && !defined(GHOSTMEM_CORE_HARNESS)
         asm volatile("dsb ish" : : : "memory");
         asm volatile("isb" : : : "memory");
 #endif

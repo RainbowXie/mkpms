@@ -35,3 +35,12 @@ target_include_directories(ghostmem_pgtable_harness PRIVATE
 )
 target_compile_definitions(ghostmem_pgtable_harness PRIVATE GHOSTMEM_PGTABLE_HARNESS)
 add_test(NAME ghostmem_pgtable_harness COMMAND ghostmem_pgtable_harness)
+
+# ghostmem.c 核心逻辑执行级 harness（15 断言：空洞查找/alloc/free/归一化）
+add_executable(ghostmem_core_harness tests/ghostmem_core_harness.c)
+target_include_directories(ghostmem_core_harness PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/shim
+)
+target_compile_definitions(ghostmem_core_harness PRIVATE GHOSTMEM_CORE_HARNESS)
+add_test(NAME ghostmem_core_harness COMMAND ghostmem_core_harness)

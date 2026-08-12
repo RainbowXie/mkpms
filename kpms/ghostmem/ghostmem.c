@@ -44,12 +44,15 @@ unsigned long page_offset_base;
 int gh_page_shift;
 int gh_page_level;
 
+#ifndef GHOSTMEM_CORE_HARNESS
 void (*gh_raw_spin_lock)(raw_spinlock_t *lock);
 void (*gh_raw_spin_unlock)(raw_spinlock_t *lock);
 void *(*kfunc_find_task_by_vpid)(pid_t nr);
+#endif
 
 int ghostmem_detect_page_config(void)
 {
+#ifndef GHOSTMEM_CORE_HARNESS
     u64 tcr_el1;
     u64 t1sz, va_bits, tg1;
 
@@ -69,6 +72,7 @@ int ghostmem_detect_page_config(void)
     page_offset_base = ~0UL << (va_bits - 1);
     pr_info("ghostmem: va_bits=%lld page_shift=%d page_level=%d\n",
             va_bits, gh_page_shift, gh_page_level);
+#endif /* GHOSTMEM_CORE_HARNESS */
     return 0;
 }
 
@@ -322,6 +326,7 @@ int ghostmem_do_info(void *mm, void __user *buf, unsigned long len)
 }
 
 /* ========== prctl hook ========== */
+#ifndef GHOSTMEM_CORE_HARNESS
 
 void prctl_before_gh(hook_fargs4_t *args, void *udata)
 {
@@ -483,3 +488,5 @@ KPM_AUTHOR("ethan");
 KPM_DESCRIPTION("VMA-Less Ghost Memory - invisible RWX allocations via manual PTE");
 KPM_INIT(ghostmem_init);
 KPM_EXIT(ghostmem_exit);
+
+#endif /* GHOSTMEM_CORE_HARNESS */
