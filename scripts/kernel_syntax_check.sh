@@ -39,10 +39,15 @@ for d in "${INCS[@]}"; do
     [ -d "$d" ] && INC_ARGS="$INC_ARGS -I$d"
 done
 
-# 目标文件：ghostmem + wxshadow 内核源（排除用户态 *_client.c）
+# 目标文件：全部 KPM 模块内核源（排除用户态 *_client.c 与 common/ 共享头目录）
 FILES=""
-for m in ghostmem wxshadow; do
-    for f in "$REPO_DIR/kpms/$m"/*.c; do
+for m in kpms/*/; do
+    [ -d "$m" ] || continue
+    case "$m" in
+        *common/) continue ;;
+    esac
+    for f in "$REPO_DIR/$m"*.c; do
+        [ -f "$f" ] || continue
         case "$f" in
             *_client.c) continue ;;
         esac
