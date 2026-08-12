@@ -61,6 +61,16 @@ int main(int argc, char *argv[])
     rc = run_client(bin, self_argv);
     CHECK(rc == 0, "-c on unmapped VA exits 0 (invisible)");
 
+    /* 3b. -c 对已映射地址（client 自身）应退出 1（VISIBLE） */
+    {
+        char self_va[32];
+        snprintf(self_va, sizeof(self_va), "0x%lx", (unsigned long)&main);
+        self_argv[0] = (char *)bin; self_argv[1] = (char *)"-p"; self_argv[2] = mypid;
+        self_argv[3] = (char *)"-c"; self_argv[4] = self_va; self_argv[5] = NULL;
+        rc = run_client(bin, self_argv);
+        CHECK(rc == 1, "-c on mapped addr (&main) exits 1 (visible)");
+    }
+
     /* 4. -i（pid=0）在无模块时预期失败但流程不崩（退出 1） */
     self_argv[1] = (char *)"-p"; self_argv[2] = mypid;
     self_argv[3] = (char *)"-i"; self_argv[4] = NULL;
