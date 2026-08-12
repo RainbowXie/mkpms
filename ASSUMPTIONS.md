@@ -4,7 +4,8 @@
 
 ## 环境与验证
 
-- **无真机验证环境**：`aarch64-linux-gnu-gcc` 未安装、`.kp` submodule 未初始化，内核模块（ghostmem/wxshadow）无法编译/真机测试。验证方式 = host 语法检查 + 对照 wxshadow 模式的代码审查 + host 侧单元测试。
+- **无真机验证环境**：`aarch64-linux-gnu-gcc` 未安装、`.kp` submodule 未初始化，无法交叉编译/真机测试内核模块。验证方式 = **host gcc -fsyntax-only + 真实 KernelPatch 框架头**（`scripts/kernel_syntax_check.sh`，8 源文件全部通过）+ host 侧单元测试 + 代码审查。
+- KernelPatch 源码本地副本位于 `/mnt/data/Work/Projects/KernelPatch`（脚本需指定其路径或初始化 submodule）。
 - **宿主测试平台 = x86_64**：ghostlinker 的目标平台是 ARM64（Android），但 host gcc 产出 x86_64 ELF。为能在宿主机验证加载/重定位逻辑，ghostlinker 额外支持 `R_X86_64_*` 重定位类型（仅测试用途，非生产目标）。
 - **x86_64 RELA 格式**：假定 `gcc -shared` 产出纯 RELA（addend 在 `r_addend`，slot 初始为 0）。已用 readelf/实测确认。
 
