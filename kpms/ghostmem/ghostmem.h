@@ -22,6 +22,8 @@
 #define PR_GHOSTMEM_ALLOC       0x47474d01  /* prctl(opt, pid, nr_pages, prot, 0) -> user VA */
 #define PR_GHOSTMEM_FREE        0x47474d02  /* prctl(opt, pid, va, 0, 0) */
 #define PR_GHOSTMEM_INFO        0x47474d03  /* prctl(opt, pid, buf, len, 0) -> stats to user buf */
+#define PR_GHOSTMEM_WRITE       0x47474d04  /* prctl(opt, pid, va, buf, len) -> write ghost mem (kernel PTE) */
+#define PR_GHOSTMEM_READ        0x47474d05  /* prctl(opt, pid, va, buf, len) -> read ghost mem (kernel PTE) */
 
 /* Max pages per allocation (64 = 256KB) */
 #define GHOSTMEM_MAX_PAGES      64

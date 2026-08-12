@@ -241,6 +241,10 @@ void ghostmem_unmap_pages(void *mm, unsigned long va, unsigned long nr_pages);
 int ghostmem_copy_to_user_via_pte(void __user *ubuf, const void *from,
                                   unsigned long len);
 
+/* Cross-process read/write of ghost memory via PTE (no ptrace needed). */
+int ghostmem_read_pages(void *mm, unsigned long va, void *kbuf, unsigned long len);
+int ghostmem_write_pages(void *mm, unsigned long va, const void *kbuf, unsigned long len);
+
 /* ========== ghostmem.c interfaces ========== */
 
 int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,

@@ -302,6 +302,52 @@ int main(void)
         stub_free_pages(pfns_b[1] << 12, 0);
     }
 
+    /* 9. ghostmem_read/write_pages：跨进程 PTE 读写幽灵内存 */
+    {
+        unsigned long pfns_r[2];
+        unsigned long va_r = 0x30000000UL; /* 3GB，2MB 对齐 */
+        unsigned char wbuf[20], rbuf[20];
+        u64 *ptep;
+
+        pfns_r[0] = gh_kaddr_to_pfn(stub_get_free_pages(0, 0));
+        pfns_r[1] = gh_kaddr_to_pfn(stub_get_free_pages(0, 0));
+        CHECK(ghostmem_map_pages(&mm, va_r, pfns_r, 2, 7) == 0, "rw map 2 pages");
+
+        /* 写入（经 PTE 到物理页） */
+        memcpy(wbuf, "RW-TEST-PAYLOAD", 15);
+        CHECK(ghostmem_write_pages(&mm, va_r + 5, wbuf, 15) == 0, "write_pages ok");
+
+        /* 读回（跨页边界 5..20 落在页内；验证字节） */
+        memset(rbuf, 0, sizeof(rbuf));
+        CHECK(ghostmem_read_pages(&mm, va_r + 5, rbuf, 15) == 0, "read_pages ok");
+        CHECK(memcmp(rbuf, wbuf, 15) == 0, "rw roundtrip matches");
+
+        /* 跨页写（写 3 页长度 → 应拒绝？不——逐页处理支持跨页） */
+        {
+            unsigned char big[5000];
+            memset(big, 0xAB, sizeof(big));
+            CHECK(ghostmem_write_pages(&mm, va_r, big, sizeof(big)) == 0,
+                  "write_pages cross-page ok");
+            memset(rbuf, 0, sizeof(rbuf));
+            CHECK(ghostmem_read_pages(&mm, va_r + 4096 - 2, rbuf, 4) == 0,
+                  "read cross-page boundary");
+            CHECK(rbuf[0] == 0xAB && rbuf[2] == 0xAB, "cross-page data matches");
+        }
+
+        /* 未映射地址拒绝 */
+        CHECK(ghostmem_read_pages(&mm, 0x50000000UL, rbuf, 4) == -EFAULT,
+              "read unmapped rejected");
+        CHECK(ghostmem_write_pages(&mm, 0x50000000UL, wbuf, 4) == -EFAULT,
+              "write unmapped rejected");
+
+        /* 清理 */
+        ghostmem_unmap_pages(&mm, va_r, 2);
+        ptep = ghostmem_get_pte(&mm, va_r);
+        CHECK(ptep == NULL || !(*ptep & PTE_VALID), "rw pages cleared");
+        stub_free_pages(pfns_r[0] << 12, 0);
+        stub_free_pages(pfns_r[1] << 12, 0);
+    }
+
     printf("failures=%d\n", failures);
     return failures ? 1 : 0;
 }

@@ -339,7 +339,7 @@ void prctl_before_gh(hook_fargs4_t *args, void *udata)
     int ret;
     pid_t pid;
 
-    if (option < PR_GHOSTMEM_ALLOC || option > PR_GHOSTMEM_INFO)
+    if (option < PR_GHOSTMEM_ALLOC || option > PR_GHOSTMEM_READ)
         return;
 
     GH_HANDLER_ENTER();
@@ -376,6 +376,59 @@ void prctl_before_gh(hook_fargs4_t *args, void *udata)
         args->ret = ret;
         args->skip_origin = 1;
         break;
+
+    case PR_GHOSTMEM_WRITE:
+    case PR_GHOSTMEM_READ: {
+        /* 跨进程幽灵内存读写（无 ptrace）：
+         * 1. 经当前进程 PTE 把用户 buf 读入/写回内核临时缓冲
+         * 2. 经目标 mm 的 PTE 读/写幽灵页
+         * 3. 限 GHOSTMEM_MAX_PAGES 页 */
+        void *kbuf;
+        unsigned long tlen = arg4;
+        int is_read = (option == PR_GHOSTMEM_READ);
+
+        if (tlen == 0 || tlen > GHOSTMEM_MAX_PAGES * GHOSTMEM_PAGE_SIZE) {
+            args->ret = -EINVAL;
+            args->skip_origin = 1;
+            break;
+        }
+        pid = (pid_t)arg2;
+        mm = gh_resolve_pid_to_mm(pid);
+        if (!mm) { args->ret = -ESRCH; args->skip_origin = 1; break; }
+
+        kbuf = kfunc_kzalloc(tlen, 0xcc0);
+        if (!kbuf) {
+            kfunc_mmput(mm);
+            args->ret = -ENOMEM;
+            args->skip_origin = 1;
+            break;
+        }
+
+        if (is_read) {
+            ret = ghostmem_read_pages(mm, arg3, kbuf, tlen);
+            if (ret == 0) {
+                /* 写回当前进程用户 buf（经当前 mm PTE） */
+                ret = ghostmem_copy_to_user_via_pte((void __user *)arg4, kbuf, tlen);
+            }
+        } else {
+            /* 从当前进程用户 buf 读入（经当前 mm PTE） */
+            void *cur_mm = kfunc_get_task_mm(current);
+            if (cur_mm) {
+                ret = ghostmem_read_pages(cur_mm, (unsigned long)arg4, kbuf, tlen);
+                kfunc_mmput(cur_mm);
+            } else {
+                ret = -ESRCH;
+            }
+            if (ret == 0)
+                ret = ghostmem_write_pages(mm, arg3, kbuf, tlen);
+        }
+
+        kfunc_kfree(kbuf);
+        kfunc_mmput(mm);
+        args->ret = ret;
+        args->skip_origin = 1;
+        break;
+    }
 
     default:
         break;

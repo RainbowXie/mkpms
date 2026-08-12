@@ -347,3 +347,58 @@ void ghostmem_unmap_pages(void *mm, unsigned long va, unsigned long nr_pages)
     for (; group_va < end; group_va += GH_PTE_COVER_SIZE)
         ghostmem_reclaim_tables(mm, group_va);
 }
+
+/*
+ * 经 PTE 读写目标进程的幽灵内存（跨进程，无 ptrace 依赖）。
+ * 对齐 wxshadow PATCH 模式：定位 PTE → 拿物理页 → 内核视图 memcpy。
+ * 单次最多 GHOSTMEM_MAX_PAGES 页；跨页安全（逐页处理）。
+ */
+int ghostmem_read_pages(void *mm, unsigned long va, void *kbuf,
+                        unsigned long len)
+{
+    unsigned long done = 0;
+
+    while (done < len) {
+        unsigned long page_off = (va + done) & (GHOSTMEM_PAGE_SIZE - 1);
+        unsigned long chunk = GHOSTMEM_PAGE_SIZE - page_off;
+        u64 *ptep = ghostmem_get_pte(mm, va + done);
+        unsigned long pfn, kaddr;
+
+        if (chunk > len - done)
+            chunk = len - done;
+        if (!ptep || !(*ptep & PTE_VALID))
+            return -EFAULT;
+        pfn = (*ptep >> GHOSTMEM_PAGE_SHIFT) & 0xFFFFFFFFFUL;
+        kaddr = (unsigned long)gh_pfn_to_kaddr(pfn);
+        if (!gh_is_kva(kaddr))
+            return -EFAULT;
+        memcpy((char *)kbuf + done, (void *)(kaddr + page_off), chunk);
+        done += chunk;
+    }
+    return 0;
+}
+
+int ghostmem_write_pages(void *mm, unsigned long va, const void *kbuf,
+                         unsigned long len)
+{
+    unsigned long done = 0;
+
+    while (done < len) {
+        unsigned long page_off = (va + done) & (GHOSTMEM_PAGE_SIZE - 1);
+        unsigned long chunk = GHOSTMEM_PAGE_SIZE - page_off;
+        u64 *ptep = ghostmem_get_pte(mm, va + done);
+        unsigned long pfn, kaddr;
+
+        if (chunk > len - done)
+            chunk = len - done;
+        if (!ptep || !(*ptep & PTE_VALID))
+            return -EFAULT;
+        pfn = (*ptep >> GHOSTMEM_PAGE_SHIFT) & 0xFFFFFFFFFUL;
+        kaddr = (unsigned long)gh_pfn_to_kaddr(pfn);
+        if (!gh_is_kva(kaddr))
+            return -EFAULT;
+        memcpy((void *)(kaddr + page_off), (const char *)kbuf + done, chunk);
+        done += chunk;
+    }
+    return 0;
+}

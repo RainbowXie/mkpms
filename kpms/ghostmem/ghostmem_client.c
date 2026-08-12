@@ -32,6 +32,8 @@
 #define PR_GHOSTMEM_ALLOC  0x47474d01
 #define PR_GHOSTMEM_FREE   0x47474d02
 #define PR_GHOSTMEM_INFO   0x47474d03
+#define PR_GHOSTMEM_WRITE  0x47474d04
+#define PR_GHOSTMEM_READ   0x47474d05
 
 #define GHOSTMEM_PROT_READ  0x1
 #define GHOSTMEM_PROT_WRITE 0x2
@@ -193,14 +195,18 @@ int main(int argc, char *argv[])
                 *(volatile unsigned char *)(va + i) = buf[i];
             }
         } else {
-            /* 跨进程：幽灵页在目标 mm，用 process_vm_writev（页有 PTE，GUP 可过） */
-            struct iovec local = { buf, (size_t)n };
-            struct iovec remote = { (void *)va, (size_t)n };
-            ssize_t wr = process_vm_writev(pid, &local, 1, &remote, 1, 0);
-            if (wr != n) {
-                fprintf(stderr, "writev failed: %s (errno=%d, wrote=%zd/%d)\n",
-                        strerror(errno), errno, wr, n);
-                return 1;
+            /* 跨进程：优先内核 prctl（PTE 读写，无 ptrace 依赖）；
+             * 模块未加载时回退 process_vm_writev。 */
+            long kr = prctl(PR_GHOSTMEM_WRITE, pid, va, (unsigned long)buf, (unsigned long)n);
+            if (kr < 0) {
+                struct iovec local = { buf, (size_t)n };
+                struct iovec remote = { (void *)va, (size_t)n };
+                ssize_t wr = process_vm_writev(pid, &local, 1, &remote, 1, 0);
+                if (wr != n) {
+                    fprintf(stderr, "write failed: prctl=%ld writev=%zd (errno=%d)\n",
+                            kr, wr, errno);
+                    return 1;
+                }
             }
         }
         printf("wrote %d byte(s) to 0x%lx (pid=%d)\n", n, va, pid);
@@ -221,16 +227,19 @@ int main(int argc, char *argv[])
             }
             printf("\n");
         } else {
-            /* 跨进程：process_vm_readv */
+            /* 跨进程：优先内核 prctl（PTE 读写），回退 process_vm_readv */
             unsigned char *rbuf = malloc(len ? len : 1);
-            struct iovec local = { rbuf, len };
-            struct iovec remote = { (void *)va, len };
-            ssize_t rd = process_vm_readv(pid, &local, 1, &remote, 1, 0);
-            if (rd != (ssize_t)len) {
-                fprintf(stderr, "readv failed: %s (errno=%d, read=%zd/%lu)\n",
-                        strerror(errno), errno, rd, len);
-                free(rbuf);
-                return 1;
+            long kr = prctl(PR_GHOSTMEM_READ, pid, va, (unsigned long)rbuf, (unsigned long)len);
+            if (kr < 0) {
+                struct iovec local = { rbuf, len };
+                struct iovec remote = { (void *)va, len };
+                ssize_t rd = process_vm_readv(pid, &local, 1, &remote, 1, 0);
+                if (rd != (ssize_t)len) {
+                    fprintf(stderr, "read failed: prctl=%ld readv=%zd (errno=%d)\n",
+                            kr, rd, errno);
+                    free(rbuf);
+                    return 1;
+                }
             }
             for (j = 0; j < len; j++) {
                 printf("%02x ", rbuf[j]);
