@@ -48,7 +48,7 @@ else
 fi
 
 if [ $FAIL -eq 0 ]; then
-    echo "ALL TESTS PASSED (mkpms 19 suites + kernel 14 + rustFrida 18)"
+    echo "ALL TESTS PASSED (mkpms 20 suites + kernel 14 + rustFrida 18)"
 else
     echo "SOME TESTS FAILED"; exit 1
 fi
