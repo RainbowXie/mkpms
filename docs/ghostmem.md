@@ -27,7 +27,7 @@
 |------|------|------|
 | `PR_GHOSTMEM_ALLOC (0x47474d01)` | `prctl(opt, pid, nr_pages, prot, 0)` | 分配，返回用户 VA；`prot` 用 `PROT_READ/WRITE/EXEC` 位（0=默认 RWX），最大 64 页 |
 | `PR_GHOSTMEM_FREE (0x47474d02)` | `prctl(opt, pid, va, 0, 0)` | 释放整块（须传块基址），未登记地址返回 `-EINVAL` |
-| `PR_GHOSTMEM_INFO (0x47474d03)` | `prctl(opt, 0, &stats, sizeof, 0)` | 返回 `{nr_blocks, nr_pages}` 统计；仅支持 `pid==0`（当前进程，经 PTE 拷贝用户缓冲） |
+| `PR_GHOSTMEM_INFO (0x47474d03)` | `prctl(opt, pid, &stats, sizeof, 0)` | 返回目标 pid 的 `{nr_blocks, nr_pages}` 统计（缓冲在调用进程，经 PTE 拷贝） |
 
 `pid=0` 表示当前进程；非法 pid 返回 `-ESRCH`。
 

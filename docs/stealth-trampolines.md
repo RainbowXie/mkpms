@@ -29,7 +29,7 @@ typedef void     (*gum_stealth_free_t)(gpointer mem);
 #define PR_GHOSTMEM_FREE   0x47474d02  /* prctl(opt, pid=0, va, 0, 0) */
 ```
 
-- `pid=0` = 当前进程（loader 自分配）；跨进程分配给目标 pid 亦可
+- `pid` = 目标进程（pid=0 为当前进程）；INFO 统计目标 pid，缓冲在调用进程
 - prot 默认 RWX（跳板需可执行）；单次上限 64 页（256KB）
 - 返回 VA 是 VMA-Less 的，`/proc/pid/maps` 不可见
 
