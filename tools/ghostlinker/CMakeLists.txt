@@ -62,3 +62,17 @@ target_link_libraries(ghostlinker_bss_test ghostlinker)
 add_test(NAME ghostlinker_bss_test
         COMMAND ghostlinker_bss_test $<TARGET_FILE:ghl_bss>)
 add_dependencies(ghostlinker_bss_test ghl_bss)
+
+# 宿主解析回调（外部符号注入）
+set(GHL_EXT_SRC ${CMAKE_CURRENT_BINARY_DIR}/ghl_ext.c)
+file(WRITE ${GHL_EXT_SRC}
+"extern int external_value;\n"
+"int exported_get_ext(void) { return external_value; }\n")
+add_library(ghl_ext SHARED ${GHL_EXT_SRC})
+set_target_properties(ghl_ext PROPERTIES
+    LINK_FLAGS "-Wl,--unresolved-symbols=ignore-all")
+add_executable(ghostlinker_resolver_test tests/ghostlinker_resolver_test.c)
+target_link_libraries(ghostlinker_resolver_test ghostlinker)
+add_test(NAME ghostlinker_resolver_test
+        COMMAND ghostlinker_resolver_test $<TARGET_FILE:ghl_ext>)
+add_dependencies(ghostlinker_resolver_test ghl_ext)
