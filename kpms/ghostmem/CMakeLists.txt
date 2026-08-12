@@ -17,6 +17,12 @@ target_include_directories(ghostmem_abi_test PRIVATE
 )
 add_test(NAME ghostmem_abi_test COMMAND ghostmem_abi_test)
 
+# ghostmem_client 行为 e2e（host 可执行路径：maps 校验/参数解析）
+add_executable(ghostmem_client_e2e_test tests/ghostmem_client_e2e_test.c)
+add_test(NAME ghostmem_client_e2e_test
+        COMMAND ghostmem_client_e2e_test $<TARGET_FILE:ghostmem_client>)
+add_dependencies(ghostmem_client_e2e_test ghostmem_client)
+
 # ghostmem_client 区间重叠逻辑 host 单测
 add_executable(ghostmem_client_overlap_test tests/ghostmem_client_overlap_test.c)
 target_include_directories(ghostmem_client_overlap_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

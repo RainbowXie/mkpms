@@ -50,7 +50,7 @@ static void print_usage(const char *prog)
         "  -f <va>                   free block at VA\n"
         "  -w <va> <hexbytes>        write hex bytes to VA\n"
         "  -r <va> <len>             read len bytes from VA (hex dump)\n"
-        "  -i                        print ghostmem stats for pid\n"
+        "  -i                        print ghostmem stats (pid=0 only)\n"
         "  -c <va> [len]            verify range absent from maps (exit 1 if visible)\n"
         "  -n <pages>                alloc + self-verify invisibility (exit 1 if visible)\n",        prog);
 }
