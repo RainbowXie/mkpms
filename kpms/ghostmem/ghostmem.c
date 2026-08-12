@@ -11,6 +11,7 @@
  */
 
 #include "ghostmem_internal.h"
+#include "ghostmem_args.h"
 
 /* ========== Global state ========== */
 
@@ -111,9 +112,10 @@ static void *gh_resolve_pid_to_mm(pid_t pid)
 #define VMA_VM_START_OFFSET 0x00
 #define VMA_VM_END_OFFSET   0x08
 
-/* Scan base/limit: 落在堆顶与 mmap 区之间的大空洞内（48-bit VA 下远离两端） */
-#define GHOSTMEM_SCAN_BASE  0x100000000UL      /* 4GB */
-#define GHOSTMEM_SCAN_LIMIT 0x7000000000UL     /* 448GB */
+/* 扫描范围（init args 可覆盖：base=<hex> limit=<hex>）。
+ * 默认落在堆顶与 mmap 区之间的大空洞内（48-bit VA 下远离两端）。 */
+static unsigned long gh_scan_base = 0x100000000UL;   /* 4GB */
+static unsigned long gh_scan_limit = 0x7000000000UL; /* 448GB */
 
 /*
  * Find a VMA-less gap of @size bytes for @mm.
@@ -122,13 +124,13 @@ static void *gh_resolve_pid_to_mm(pid_t pid)
  */
 static unsigned long gh_find_hole(void *mm, unsigned long size)
 {
-    unsigned long addr = GHOSTMEM_SCAN_BASE;
+    unsigned long addr = gh_scan_base;
     unsigned long vstart, vend;
     void *vma;
 
     size = (size + GHOSTMEM_PAGE_SIZE - 1) & GHOSTMEM_PAGE_MASK;
 
-    while (addr + size <= GHOSTMEM_SCAN_LIMIT) {
+    while (addr + size <= gh_scan_limit) {
         vma = kfunc_find_vma(mm, addr);
         if (!vma)
             return addr; /* 之上无映射，直接可用 */
@@ -398,6 +400,31 @@ static long ghostmem_init(const char *args, const char *event, void *__user rese
     int ret;
 
     pr_info("ghostmem: initializing...\n");
+
+    /* 可选启动参数：base=<hex> limit=<hex> 覆盖扫描范围（真机冲突时调整） */
+    if (args) {
+        const char *p = args;
+        while (*p) {
+            while (*p == ' ' || *p == ',')
+                p++;
+            if (!strncmp(p, "base=", 5)) {
+                unsigned long v;
+                if (gh_parse_hex(p + 5, &v))
+                    gh_scan_base = v;
+                p += 5;
+            } else if (!strncmp(p, "limit=", 6)) {
+                unsigned long v;
+                if (gh_parse_hex(p + 6, &v))
+                    gh_scan_limit = v;
+                p += 6;
+            } else {
+                p++;
+            }
+            while (*p && *p != ' ' && *p != ',')
+                p++;
+        }
+        pr_info("ghostmem: scan base=0x%lx limit=0x%lx\n", gh_scan_base, gh_scan_limit);
+    }
 
     ret = ghostmem_resolve_symbols();
     if (ret < 0)

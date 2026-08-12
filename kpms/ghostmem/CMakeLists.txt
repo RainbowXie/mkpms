@@ -21,3 +21,8 @@ add_test(NAME ghostmem_abi_test COMMAND ghostmem_abi_test)
 add_executable(ghostmem_client_overlap_test tests/ghostmem_client_overlap_test.c)
 target_include_directories(ghostmem_client_overlap_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME ghostmem_client_overlap_test COMMAND ghostmem_client_overlap_test)
+
+# ghostmem init args hex 解析 host 单测
+add_executable(ghostmem_args_test tests/ghostmem_args_test.c)
+target_include_directories(ghostmem_args_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME ghostmem_args_test COMMAND ghostmem_args_test)

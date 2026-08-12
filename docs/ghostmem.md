@@ -37,7 +37,8 @@
 # 部署（需 APatch/KernelSU + aarch64 交叉编译）
 adb push build/kpms/ghostmem/ghostmem.kpm /data/local/tmp/
 adb push build/kpms/ghostmem/ghostmem_client /data/local/tmp/
-kpatch module load /data/local/tmp/ghostmem.kpm
+# 可选启动参数：base=<hex> limit=<hex> 覆盖扫描范围（默认 4GB..448GB）
+kpatch module load /data/local/tmp/ghostmem.kpm base=0x200000000 limit=0x6000000000
 
 # 分配 16 页 RWX 幽灵内存给 pid 1234
 ./ghostmem_client -p 1234 -a 16            # -> 0x100000000
