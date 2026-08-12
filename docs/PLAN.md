@@ -14,7 +14,7 @@
 | 3 | **自定义 Linker** | 在幽灵内存中手工映射 SO：解析 ELF、映射段、重定位 | soinfo / linker 符号比对 | mkpms | ✅ `tools/ghostlinker/`（v1，无 TLS） |
 | 4 | **Stealth Trampolines** | 替换 Gum 跳板分配器（`gum_set_stealth_alloc`），跳板自动落幽灵内存 | 代码段特征扫描 | rustFrida | 🕐 分配器 ✅（`ghostmem.rs`）；`gum_set_stealth_alloc` 接线待 agent 构建链 |
 | 5 | **W^X Shadow 断点** | shadow 页复制原始代码，断点写 shadow 页，读取切回原始页 | 指令内存比对（crc） | mkpms | ✅ 已有（wxshadow） |
-| 6 | **ART 层特征隐蔽** | 隐藏 ART Hook 产生的运行时特征 | ART 内部检测 | rustFrida | 🕐 设计完成（`docs/art-hiding.md`）；实现待真机 |
+| 6 | **ART 层特征隐蔽** | 隐藏 ART Hook 产生的运行时特征 | ART 内部检测 | rustFrida | ✅ 已有 `art_controller.rs`（ArtMethod 替换/OAT 隐藏/GC 同步）+ 设计文档（#4 结合点风险已分析） |
 | 7 | **Native 无痕 Hook** | 跳板/补丁全部走幽灵内存，主/子线程稳定 | 崩溃/闪退 | 依赖 #1/#4 | 🕐 依赖 #4 完成 |
 | 8 | **Stalker/QBDI 高速 Trace** | 指令级 trace + LZ4 实时压缩落盘 | 无（分析侧） | rustFrida | 🕐 Stalker LZ4 全链路 ✅（编码+落盘+host 解码器，e2e 验证）；QBDI 原生编码（基准角色）；基准对齐待真机 |
 | 9 | **Zygote 注入与恢复** | 注入后恢复 Zygote 到干净状态 | zygote 状态检测 | rustFrida | ✅ 已有（loader.py） |
@@ -33,7 +33,7 @@
 - `agent/src/`：`stalker.rs`（**LZ4 批落盘已接入**）、`trace/lz4_block.rs`（**新增**，7 测试含 lz4_flex 互操作）、`ghostmem.rs`（**新增**，#4 分配器）、`exec_mem.rs`、`quickjs_loader.rs`。
 - `loader/`：`loader.py`/`loader.c` 注入器 —— #9 已有。
 - `qbdi/`、`ldmonitor/` —— QBDI 集成与 linker 监控。
-- **缺口**：#4 `gum_set_stealth_alloc` 接线（待 frida-gum 17.x + 构建链）、#6 ART 实现（设计完成）、#8 真机基准对齐。
+- **缺口**：#4 `gum_set_stealth_alloc` 注册（待 frida-gum 17.x + 构建链）、#7 依赖 #4、#8 真机基准对齐。
 
 ## 3. 实施路线图
 
