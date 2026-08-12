@@ -221,6 +221,10 @@ int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,
     if (nr_pages == 0 || nr_pages > GHOSTMEM_MAX_PAGES)
         return -EINVAL;
 
+    /* prot==0 语义：默认 RWX（文档约定） */
+    if (prot == 0)
+        prot = GHOSTMEM_PROT_READ | GHOSTMEM_PROT_WRITE | GHOSTMEM_PROT_EXEC;
+
     size = nr_pages * GHOSTMEM_PAGE_SIZE;
     va = gh_find_hole(mm, size);
     if (!va) {
