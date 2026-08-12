@@ -11,6 +11,7 @@ mkpms / SeamlessHook 项目的技术文档索引。
 | [ghostlinker.md](ghostlinker.md) | 自定义 Linker v1：幽灵内存中 ELF 映射 / 重定位 / init_array | #3 |
 | [stealth-trampolines.md](stealth-trampolines.md) | Frida Gum 无痕跳板对接（`gum_set_stealth_alloc`）：设计 / 状态 | #4 |
 | [art-hiding.md](art-hiding.md) | ART 层特征隐蔽：检测面 / 设计 / 与 #4 结合点分析 | #6 |
+| [coexistence.md](coexistence.md) | wxshadow × ghostmem 协同：组合用法 / 接口隔离 / 卸载顺序 | #5+#1 |
 
 ## 方案状态（9 项）
 
