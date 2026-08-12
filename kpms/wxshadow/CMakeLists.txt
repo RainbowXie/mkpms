@@ -44,3 +44,7 @@ add_test(NAME wxshadow_next_task_test COMMAND wxshadow_next_task_test)
 # wxshadow 地址翻译助手（is_kva / v↔p 三模式）
 add_executable(wxshadow_addr_test tests/wxshadow_addr_test.c)
 add_test(NAME wxshadow_addr_test COMMAND wxshadow_addr_test)
+
+# VMA 偏移助手（vm_start/vm_end 读取，ghostmem/wxshadow 共用）
+add_executable(vma_offset_test tests/vma_offset_test.c)
+add_test(NAME vma_offset_test COMMAND vma_offset_test)
