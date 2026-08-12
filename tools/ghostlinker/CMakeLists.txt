@@ -30,3 +30,7 @@ add_library(ghl_payload SHARED ${GHL_PAYLOAD_SRC})
 add_test(NAME ghostlinker_test COMMAND ghostlinker_test $<TARGET_FILE:ghl_payload>)
 # 确保测试运行时 payload 已构建（ctest 不自动构建依赖）
 add_dependencies(ghostlinker_test ghl_payload)
+
+# CLI --run 测试：加载 payload 并调用导出构造器（验证输出含 calling init）
+add_test(NAME ghostlinker_cli_run
+        COMMAND sh -c "$<TARGET_FILE:ghostlinker_cli> $<TARGET_FILE:ghl_payload> --run | grep -q 'calling init:'")
