@@ -9,7 +9,7 @@
 
 工具：`tools/ghostlinker/` — 自定义 Linker v1，在幽灵内存中手工映射 ELF（见 `docs/ghostlinker.md`）。
 
-总计划与方案调研：`docs/PLAN.md`。
+总计划与方案调研：`docs/PLAN.md`；全部文档索引：`docs/README.md`。
 
 git config submodule.recurse true 自动更新submodule
 # 使用方法
