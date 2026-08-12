@@ -18,6 +18,8 @@ set(GHL_PAYLOAD_SRC ${CMAKE_CURRENT_BINARY_DIR}/ghl_payload.c)
 file(WRITE ${GHL_PAYLOAD_SRC}
 "int g_value = 42;\n"
 "int *g_ptr = &g_value;\n"
+"volatile int g_ctor_flag;\n"
+"__attribute__((constructor)) void my_ctor(void) { g_ctor_flag = 0xCAFE; }\n"
 "int exported_add(int a, int b) { return a + b; }\n")
 add_library(ghl_payload SHARED ${GHL_PAYLOAD_SRC})
 

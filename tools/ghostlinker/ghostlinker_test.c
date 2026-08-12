@@ -99,13 +99,43 @@ int main(int argc, char *argv[])
     /* 4. 内部函数符号可寻址（不调用：PLT stub 未填充是 v1 非目标） */
     {
         void *fn = gh_link_find_symbol(&res, "exported_add");
-        CHECK(fn != NULL && fn >= res.base && fn < (char *)res.base + res.size,
+        CHECK(fn != NULL && fn >= (void *)res.base &&
+              fn < (void *)((char *)res.base + res.size),
               "exported_add addressable in mapping");
     }
 
     /* 5. 不存在的符号返回 NULL */
     CHECK(gh_link_find_symbol(&res, "nonexistent_sym") == NULL,
           "find nonexistent returns NULL");
+
+    /* 6. init_array：只调用导出构造器 my_ctor，验证副作用 g_ctor_flag */
+    {
+        int *flag = (int *)gh_link_find_symbol(&res, "g_ctor_flag");
+        int called = 0, i;
+        CHECK(flag != NULL, "find g_ctor_flag");
+        if (res.init_array && res.nr_init > 0) {
+            for (i = 0; i < res.nr_init; i++) {
+                void (*fn)(void) = res.init_array[i];
+                int j;
+                if (!fn)
+                    continue;
+                for (j = 0; j < res.sym_count; j++) {
+                    const Elf64_Sym *s = &res.symtab[j];
+                    if (s->st_value &&
+                        (char *)res.base + (s->st_value - res.load_base) == (char *)fn &&
+                        res.strtab && s->st_name &&
+                        strcmp(res.strtab + s->st_name, "my_ctor") == 0) {
+                        fn();
+                        called = 1;
+                        break;
+                    }
+                }
+            }
+        }
+        CHECK(called, "init_array invokes exported ctor");
+        if (flag)
+            CHECK(*flag == 0xCAFE, "ctor side effect g_ctor_flag == 0xCAFE");
+    }
 
     gh_link_free(&res);
     printf("failures=%d\n", failures);

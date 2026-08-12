@@ -53,6 +53,21 @@ static void *read_file(const char *path, size_t *out_size)
     return buf;
 }
 
+/* 检查地址是否对应动态符号表中的导出函数（避免调用 frame_dummy 等
+ * 依赖未解析外部符号的条目）。符号表不可用时保守跳过。 */
+static int is_exported_fn(const struct gh_linker_result *res, void *addr)
+{
+    int i;
+    if (!res->symtab || res->sym_count <= 0)
+        return 0;
+    for (i = 0; i < res->sym_count; i++) {
+        const Elf64_Sym *s = &res->symtab[i];
+        if (s->st_value && (char *)res->base + (s->st_value - res->load_base) == (char *)addr)
+            return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     struct gh_linker_cb cb = { .resolve = resolve_demo };
@@ -90,11 +105,17 @@ int main(int argc, char *argv[])
            res.base, res.size, res.init_array, res.nr_init);
 
     if (run && res.init_array && res.nr_init > 0) {
+        /* 只调用动态符号表中确认存在的导出构造器。
+         * frame_dummy 等 libgcc 条目依赖未解析外部符号，跳过。 */
         for (i = 0; i < res.nr_init; i++) {
             void (*fn)(void) = res.init_array[i];
-            if (fn) {
-                printf("calling init_array[%d] = %p\n", i, fn);
+            if (!fn)
+                continue;
+            if (is_exported_fn(&res, fn)) {
+                printf("calling init: %p\n", fn);
                 fn();
+            } else {
+                printf("skip init entry %p (not exported)\n", fn);
             }
         }
     }
