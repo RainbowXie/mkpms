@@ -45,8 +45,8 @@ static void print_usage(const char *prog)
         "  -w <va> <hexbytes>        write hex bytes to VA\n"
         "  -r <va> <len>             read len bytes from VA (hex dump)\n"
         "  -i                        print ghostmem stats for pid\n"
-        "  -c <va> [len]            verify range absent from /proc/<pid>/maps\n"
-        "  -n <pages>                alloc then self-verify invisibility\n",        prog);
+        "  -c <va> [len]            verify range absent from maps (exit 1 if visible)\n"
+        "  -n <pages>                alloc + self-verify invisibility (exit 1 if visible)\n",        prog);
 }
 
 static int parse_prot(const char *s)
@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 {
     pid_t pid = 0;
     unsigned long va = 0, len = 0, nr_pages = 0;
-    int prot = 0, i;
+    int prot = 0, i, bad = 0;
     const char *hex = NULL;
     int op = 0;
 
@@ -219,6 +219,8 @@ int main(int argc, char *argv[])
             return 1;
         }
         printf(ov ? "VISIBLE in maps (bad)\n" : "INVISIBLE in maps (ok)\n");
+        if (ov)
+            bad = 1;
         break;
     }
     case 'n': {
@@ -233,6 +235,8 @@ int main(int argc, char *argv[])
             int ov = range_in_maps(pid, ret, block_len);
             printf("alloc 0x%lx (%lu pages): %s\n", ret, nr_pages,
                    ov ? "VISIBLE (bad)" : "INVISIBLE (ok)");
+            if (ov)
+                bad = 1;
             /* 校验完释放 */
             prctl(PR_GHOSTMEM_FREE, pid, ret, 0, 0);
         }
@@ -241,6 +245,6 @@ int main(int argc, char *argv[])
     default:
         break;
     }
-    return 0;
+    return bad ? 1 : 0;
 }
 #endif /* GHOSTMEM_CLIENT_UNIT_TEST */
