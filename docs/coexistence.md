@@ -45,6 +45,17 @@ wxshadow_client -p <pid> -a 0x7b5c001234                  # 断点生效
 dmesg | grep -E "wxshadow|ghostmem"                       # 双模块日志
 ```
 
+## prctl 常量冲突审计
+
+| 族 | 范围 | 说明 |
+|----|------|------|
+| 内核标准 | `0x41555856` / `0x53564d41` / `0x59616d61` | `PR_GET_AUXV` / `PR_SET_VMA` / `PR_SET_PTRACER`（linux/prctl.h） |
+| wxshadow | `0x57580001..08` | WX 前缀 |
+| ghostmem | `0x47474d01..03` | GM 前缀 |
+
+- 三族**互不重叠**；各 prctl handler 按自身范围过滤，范围外直接 return（不设 skip_origin），不影响内核/其他模块处理。
+- 审计依据：`/usr/include/linux/prctl.h`（标准）逐项核对；新增 prctl 选项时须复查本表（Iteration 40 审计）。
+
 ## 关联
 
 - `docs/ghostmem.md`、`docs/stealth-trampolines.md`
