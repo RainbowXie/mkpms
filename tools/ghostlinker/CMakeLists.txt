@@ -1,7 +1,11 @@
-# GhostLinker - host 侧工具（独立于 KPM 构建）
-# 构建: cmake -S tools/ghostlinker -B build/ghostlinker && make
-cmake_minimum_required(VERSION 3.10)
-project(ghostlinker C)
+# GhostLinker - host 侧工具（KPM 构建外或根构建内均可）
+# 独立构建: cmake -S tools/ghostlinker -B build/ghostlinker && make
+# 根构建内: 由根 CMakeLists add_subdirectory 引入（不重复 project）
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    cmake_minimum_required(VERSION 3.10)
+    project(ghostlinker C)
+endif()
 
 add_library(ghostlinker STATIC ghostlinker.c)
 target_include_directories(ghostlinker PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -13,7 +17,7 @@ target_link_libraries(ghostlinker_cli ghostlinker)
 add_executable(ghostlinker_test ghostlinker_test.c)
 target_link_libraries(ghostlinker_test ghostlinker)
 
-# 生成测试用 payload（纯数据 + 导出函数，无外部依赖）
+# 生成测试用 payload（纯数据 + 导出函数 + 无依赖构造器）
 set(GHL_PAYLOAD_SRC ${CMAKE_CURRENT_BINARY_DIR}/ghl_payload.c)
 file(WRITE ${GHL_PAYLOAD_SRC}
 "int g_value = 42;\n"
@@ -24,4 +28,5 @@ file(WRITE ${GHL_PAYLOAD_SRC}
 add_library(ghl_payload SHARED ${GHL_PAYLOAD_SRC})
 
 add_test(NAME ghostlinker_test COMMAND ghostlinker_test $<TARGET_FILE:ghl_payload>)
-enable_testing()
+# 确保测试运行时 payload 已构建（ctest 不自动构建依赖）
+add_dependencies(ghostlinker_test ghl_payload)

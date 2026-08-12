@@ -104,4 +104,7 @@ foreach(child ${CHILD_MODULES})
     endif()
 endforeach()
 
+# host 侧工具（ghostlinker 测试）
+add_subdirectory(tools/ghostlinker)
+
 
