@@ -58,8 +58,9 @@ int ghostmem_resolve_symbols(void)
     GH_RESOLVE(kfree);
     GH_RESOLVE(copy_from_kernel_nofault);
 
-    kfunc_rcu_read_lock = (void *)gh_lookup_name("rcu_read_lock");
-    kfunc_rcu_read_unlock = (void *)gh_lookup_name("rcu_read_unlock");
+    /* rcu_read_lock 是 inline 宏，vmlinux 导出符号为 __rcu_read_lock（wxshadow 同款） */
+    kfunc_rcu_read_lock = (void *)gh_lookup_name("__rcu_read_lock");
+    kfunc_rcu_read_unlock = (void *)gh_lookup_name("__rcu_read_unlock");
     if (!kfunc_rcu_read_lock || !kfunc_rcu_read_unlock) {
         pr_err("ghostmem: rcu functions not found\n");
         return -1;
