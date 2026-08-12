@@ -142,6 +142,56 @@ int main(int argc, char *argv[])
             ret = gh_link_elf(buf, sizeof(buf), &cb, &res);
             CHECK(ret == -ENOEXEC, "missing DYNAMIC symtab/strtab/rela -> ENOEXEC");
         }
+
+        /* 构造：RELA 含未知 reloc type → apply_rela -ENOTSUP */
+        {
+            unsigned char buf[1024];
+            Elf64_Ehdr *e = (Elf64_Ehdr *)buf;
+            Elf64_Phdr *ph = (Elf64_Phdr *)(buf + sizeof(Elf64_Ehdr));
+            unsigned long sym_off = sizeof(Elf64_Ehdr) + 2 * sizeof(Elf64_Phdr);
+            unsigned long str_off = sym_off + sizeof(Elf64_Sym) * 2;
+            unsigned long rela_off = str_off + 32;
+            unsigned long dyn_off = rela_off + sizeof(Elf64_Rela);
+            Elf64_Sym *sym = (Elf64_Sym *)(buf + sym_off);
+            char *strtab = (char *)(buf + str_off);
+            Elf64_Rela *rela = (Elf64_Rela *)(buf + rela_off);
+            Elf64_Dyn *dyn = (Elf64_Dyn *)(buf + dyn_off);
+            int i;
+            memset(buf, 0, sizeof(buf));
+            memcpy(e->e_ident, ELFMAG, SELFMAG);
+            e->e_ident[EI_CLASS] = ELFCLASS64;
+            e->e_type = ET_DYN;
+            e->e_phoff = sizeof(Elf64_Ehdr);
+            e->e_phentsize = sizeof(Elf64_Phdr);
+            e->e_phnum = 2;
+            ph[0].p_type = PT_LOAD;
+            ph[0].p_vaddr = 0;
+            ph[0].p_offset = 0;
+            ph[0].p_filesz = 1024;
+            ph[0].p_memsz = 1024;
+            ph[1].p_type = PT_DYNAMIC;
+            ph[1].p_offset = dyn_off;
+            ph[1].p_vaddr = dyn_off;
+            /* 符号表：2 项（含 1 个定义符号供 RELATIVE 用） */
+            sym[0].st_name = 0;
+            sym[1].st_name = 1; /* 指向 strtab 偏移 1 */
+            sym[1].st_value = 0x100;
+            sym[1].st_shndx = 1; /* 非 UNDEF → 内部符号 */
+            strtab[1] = 'x'; /* 符号名（仅非空即可） */
+            /* RELA：1 条未知 type（0x9999 无符号） */
+            rela[0].r_offset = 0x100;
+            rela[0].r_info = ((unsigned long)1 << 32) | 0x9999UL;
+            rela[0].r_addend = 0;
+            /* DYNAMIC：SYMTAB/STRTAB/RELA/RELASZ/NULL */
+            i = 0;
+            dyn[i].d_tag = DT_SYMTAB; dyn[i].d_un.d_ptr = sym_off; i++;
+            dyn[i].d_tag = DT_STRTAB; dyn[i].d_un.d_ptr = str_off; i++;
+            dyn[i].d_tag = DT_RELA; dyn[i].d_un.d_ptr = rela_off; i++;
+            dyn[i].d_tag = DT_RELASZ; dyn[i].d_un.d_val = sizeof(Elf64_Rela); i++;
+            dyn[i].d_tag = DT_NULL; i++;
+            ret = gh_link_elf(buf, sizeof(buf), &cb, &res);
+            CHECK(ret == -ENOTSUP, "unknown reloc type -> ENOTSUP");
+        }
     }
 
     /* 2. 真实加载 */
