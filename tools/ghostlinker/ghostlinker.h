@@ -22,6 +22,7 @@
 #ifndef _GHOSTLINKER_H_
 #define _GHOSTLINKER_H_
 
+#include <elf.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -47,6 +48,10 @@ struct gh_linker_result {
     size_t size;                    /* 总映射大小 */
     int nr_init;                    /* init_array 项数 */
     void **init_array;              /* init_array 指针（base 内，非副本） */
+    const Elf64_Sym *symtab;        /* 内部状态，供 gh_link_find_symbol 使用 */
+    const char *strtab;
+    unsigned long load_base;        /* PT_LOAD 最小 vaddr，符号换算用 */
+    int sym_count;                  /* 动态符号表条目数 */
 };
 
 /*
@@ -59,6 +64,9 @@ int gh_link_elf(const void *elf, size_t elf_size, const struct gh_linker_cb *cb,
 
 /* 释放由 gh_link_elf 分配的映射（ghostmem prctl 或 munmap 回退） */
 void gh_link_free(struct gh_linker_result *res);
+
+/* 在已加载模块中按名查找导出符号（主动调用 / 测试用）；未找到返回 NULL */
+void *gh_link_find_symbol(const struct gh_linker_result *res, const char *name);
 
 #ifdef __cplusplus
 }

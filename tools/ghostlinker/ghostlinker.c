@@ -158,12 +158,14 @@ static int apply_rela(const Elf64_Rela *rela, const Elf64_Sym *symtab,
     unsigned int symidx = (unsigned int)ELF64_R_SYM(rela->r_info);
     const Elf64_Sym *sym = symidx ? &symtab[symidx] : NULL;
     void *sym_addr = NULL;
+    /* 加载偏差 B：vaddr 0 对应的实际内存地址（= mem - load_base） */
+    Elf64_Addr bias = (Elf64_Addr)mem - base;
     int ret;
 
     switch (type) {
     case R_AARCH64_RELATIVE:
-        /* B + A */
-        *where = base + rela->r_addend;
+        /* B + A（RELA：addend 在 rela 内） */
+        *where = bias + rela->r_addend;
         return 0;
     case R_AARCH64_ABS64:
         /* S + A */
@@ -174,30 +176,47 @@ static int apply_rela(const Elf64_Rela *rela, const Elf64_Sym *symtab,
         return 0;
     case R_AARCH64_GLOB_DAT:
     case R_AARCH64_JUMP_SLOT:
-        /* S */
+        /* S；外部符号未解析时置 0 继续（缺符号不致命） */
         ret = resolve_symbol(sym, strtab, mem, base, cb, &sym_addr);
-        if (ret < 0)
+        if (ret < 0) {
+            if (sym && sym->st_shndx == SHN_UNDEF) {
+                fprintf(stderr, "ghostlinker: unresolved external %s (slot=0)\n",
+                        sym->st_name && strtab ? strtab + sym->st_name : "?");
+                *where = 0;
+                return 0;
+            }
             return ret;
+        }
         *where = (Elf64_Addr)sym_addr;
         return 0;
     /* ---- 宿主测试支持（x86_64）----
      * 目标平台是 ARM64；以下类型仅用于在 x86_64 宿主机上验证
      * 加载/重定位逻辑（mini.so 由 host gcc 产出）。 */
     case R_X86_64_RELATIVE:
-        /* B + A，x86 的 addend 在槽位内 */
-        *where = base + *where;
+        /* B + A（x86 RELA：addend 在 rela 内） */
+        *where = bias + rela->r_addend;
         return 0;
     case R_X86_64_64:
         ret = resolve_symbol(sym, strtab, mem, base, cb, &sym_addr);
         if (ret < 0)
             return ret;
-        *where = (Elf64_Addr)sym_addr + *where;
+        /* S + A（RELA：addend 在 rela 内，slot 初始为 0） */
+        *where = (Elf64_Addr)sym_addr + rela->r_addend;
         return 0;
     case R_X86_64_GLOB_DAT:
     case R_X86_64_JUMP_SLOT:
+        /* 外部符号未解析时置 0 并继续（v1：缺符号不致命），
+         * 内部符号失败才是硬错误（说明段布局/符号表坏了）。 */
         ret = resolve_symbol(sym, strtab, mem, base, cb, &sym_addr);
-        if (ret < 0)
+        if (ret < 0) {
+            if (sym && sym->st_shndx == SHN_UNDEF) {
+                fprintf(stderr, "ghostlinker: unresolved external %s (slot=0)\n",
+                        sym->st_name && strtab ? strtab + sym->st_name : "?");
+                *where = 0;
+                return 0;
+            }
             return ret;
+        }
         *where = (Elf64_Addr)sym_addr;
         return 0;
     default:
@@ -216,19 +235,29 @@ static int process_dynamic(const Elf64_Dyn *dyn, unsigned char *mem,
 {
     const Elf64_Sym *symtab = NULL;
     const char *strtab = NULL;
+    unsigned long symtab_va = 0, strtab_va = 0;
     const Elf64_Rela *rela = NULL;
-    size_t rela_count = 0, rela_size = 0;
+    size_t rela_size = 0;
+    size_t rela_entries = 0;
     int i;
     int ret = 0;
+
+    out->symtab = NULL;
+    out->strtab = NULL;
 
     for (i = 0; dyn[i].d_tag != DT_NULL; i++) {
         /* 动态表项 d_ptr 是 VMA，翻译为已加载内存地址 */
         switch (dyn[i].d_tag) {
-        case DT_SYMTAB: symtab = (const Elf64_Sym *)(mem + (dyn[i].d_un.d_ptr - base)); break;
-        case DT_STRTAB: strtab = (const char *)(mem + (dyn[i].d_un.d_ptr - base)); break;
+        case DT_SYMTAB:
+            symtab_va = dyn[i].d_un.d_ptr;
+            symtab = (const Elf64_Sym *)(mem + (dyn[i].d_un.d_ptr - base));
+            break;
+        case DT_STRTAB:
+            strtab_va = dyn[i].d_un.d_ptr;
+            strtab = (const char *)(mem + (dyn[i].d_un.d_ptr - base));
+            break;
         case DT_RELA:   rela = (const Elf64_Rela *)(mem + (dyn[i].d_un.d_ptr - base)); break;
         case DT_RELASZ: rela_size = dyn[i].d_un.d_val; break;
-        case DT_RELACOUNT: rela_count = dyn[i].d_un.d_val; break;
         case DT_INIT_ARRAY:
             out->init_array = (void **)(mem + (dyn[i].d_un.d_ptr - base));
             break;
@@ -245,10 +274,19 @@ static int process_dynamic(const Elf64_Dyn *dyn, unsigned char *mem,
         return -ENOEXEC;
     }
 
-    if (rela_count == 0 && rela_size)
-        rela_count = rela_size / sizeof(Elf64_Rela);
+    /* RELA 数组覆盖 DT_RELASZ 字节；RELATIVE 可走 RELACOUNT 批量优化，但
+     * GLOB_DAT/JUMP_SLOT/ABS64 混在数组末尾，必须按 RELASZ 处理全部条目。 */
+    if (rela_size)
+        rela_entries = rela_size / sizeof(Elf64_Rela);
 
-    for (i = 0; i < (int)rela_count; i++) {
+    /* 符号表条目数 = (STRTAB - SYMTAB) / SYMENT，避免越界读 strtab */
+    out->symtab = symtab;
+    out->strtab = strtab;
+    out->sym_count = (strtab_va > symtab_va)
+                         ? (int)((strtab_va - symtab_va) / sizeof(Elf64_Sym))
+                         : 0;
+
+    for (i = 0; i < (int)rela_entries; i++) {
         ret = apply_rela(&rela[i], symtab, strtab, mem, base, cb);
         if (ret < 0)
             return ret;
@@ -306,12 +344,27 @@ int gh_link_elf(const void *elf, size_t elf_size, const struct gh_linker_cb *cb,
 
     out->base = mem;
     out->size = size;
+    out->load_base = base_addr;
     return 0;
 
 err:
     if (mem)
         default_free(mem, size);
     return ret;
+}
+
+void *gh_link_find_symbol(const struct gh_linker_result *res, const char *name)
+{
+    int i;
+
+    if (!res || !res->symtab || !res->strtab || !name || res->sym_count <= 0)
+        return NULL;
+    for (i = 0; i < res->sym_count; i++) {
+        const Elf64_Sym *s = &res->symtab[i];
+        if (s->st_name && strcmp(res->strtab + s->st_name, name) == 0)
+            return (char *)res->base + (s->st_value - res->load_base);
+    }
+    return NULL;
 }
 
 void gh_link_free(struct gh_linker_result *res)
