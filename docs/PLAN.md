@@ -9,7 +9,7 @@
 
 | # | 方案 | 原理 | 检测对抗点 | 落点仓库 | 状态 |
 |---|------|------|-----------|---------|------|
-| 1 | **VMA-Less 幽灵内存** | 内核直接分配物理页、手动建 PTE，不创建 VMA → `/proc/self/maps` 不可见 | maps 扫描 SO/特征码 | mkpms | ✅ `kpms/ghostmem/` |
+| 1 | **VMA-Less 幽灵内存** | 内核直接分配物理页、手动建 PTE，不创建 VMA → `/proc/self/maps` 不可见 | maps 扫描 SO/特征码 | mkpms | ✅ `kpms/ghostmem/`（7 prctl 接口：alloc/free/info/write/read + 跨仓库常量 4 副本锁定） |
 | 2 | **手动 PTE 页表** | 绕过 `sys_mmap`，从 `mm->pgd` 手动遍历页表写 PTE | maps / 内核 VMA 审计 | mkpms | ✅ 含于 #1 |
 | 3 | **自定义 Linker** | 在幽灵内存中手工映射 SO：解析 ELF、映射段、重定位 | soinfo / linker 符号比对 | mkpms | ✅ `tools/ghostlinker/`（v1，无 TLS） |
 | 4 | **Stealth Trampolines** | 替换 Gum 跳板分配器（`gum_set_stealth_alloc`），跳板自动落幽灵内存 | 代码段特征扫描 | rustFrida | 🕐 分配器 ✅（`ghostmem.rs`）；`gum_set_stealth_alloc` 接线待 agent 构建链 |
