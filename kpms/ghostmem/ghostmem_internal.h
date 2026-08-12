@@ -239,7 +239,6 @@ void ghostmem_unmap_pages(void *mm, unsigned long va, unsigned long nr_pages);
 
 /* ========== ghostmem.c interfaces ========== */
 
-void *ghostmem_find_block(void *mm, unsigned long va);
 int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,
                       unsigned long *out_va);
 int ghostmem_do_free(void *mm, unsigned long va);

@@ -148,21 +148,6 @@ static unsigned long gh_find_hole(void *mm, unsigned long size)
 
 /* ========== Block management ========== */
 
-void *ghostmem_find_block(void *mm, unsigned long va)
-{
-    struct ghostmem_block *b;
-
-    gh_lock();
-    list_for_each_entry(b, &ghostmem_block_list, list) {
-        if (b->mm == mm && b->va == va) {
-            gh_unlock();
-            return b;
-        }
-    }
-    gh_unlock();
-    return NULL;
-}
-
 /*
  * 解除 block 映射并释放物理页/块结构（调用时不持锁）。
  * 被 do_free / exit_mmap / 模块卸载共用。
@@ -182,23 +167,44 @@ static void ghostmem_release_block(struct ghostmem_block *b)
     kfunc_kfree(b);
 }
 
-/* 释放指定 mm 的全部幽灵块（exit_mmap / 卸载用）。 */
+/* 释放指定 mm（或 mm==NULL 表示全部）的幽灵块（exit_mmap / 卸载用）。
+ * 锁内只摘链，释放放到锁外（free_pages 不应在持锁下执行，wxshadow 同款模式）。
+ * 退出/卸载场景下 prctl 已摘，块集合稳定，故两段式（计数→收集）无竞态。 */
 void ghostmem_free_blocks_for_mm(void *mm, const char *reason)
 {
+    struct ghostmem_block **arr = NULL;
     struct ghostmem_block *b, *tmp;
-    int nr = 0;
+    int count = 0, i;
 
     gh_lock();
+    list_for_each_entry(b, &ghostmem_block_list, list) {
+        if (!mm || b->mm == mm)
+            count++;
+    }
+    gh_unlock();
+    if (count == 0)
+        return;
+
+    arr = kfunc_kzalloc(count * sizeof(*arr), 0xcc0);
+    if (!arr) {
+        pr_err("ghostmem: [%s] OOM collecting blocks (mm=%px)\n", reason, mm);
+        return;
+    }
+
+    gh_lock();
+    i = 0;
     list_for_each_entry_safe(b, tmp, &ghostmem_block_list, list) {
-        if (b->mm == mm) {
+        if ((!mm || b->mm == mm) && i < count) {
             list_del_init(&b->list);
-            ghostmem_release_block(b);
-            nr++;
+            arr[i++] = b;
         }
     }
     gh_unlock();
-    if (nr > 0)
-        pr_info("ghostmem: [%s] released %d block(s) for mm=%px\n", reason, nr, mm);
+
+    for (i = 0; i < count; i++)
+        ghostmem_release_block(arr[i]);
+    kfunc_kfree(arr);
+    pr_info("ghostmem: [%s] released %d block(s) (mm=%px)\n", reason, count, mm);
 }
 
 /* ========== prctl operations ========== */
@@ -414,23 +420,13 @@ static long ghostmem_init(const char *args, const char *event, void *__user rese
 
 static long ghostmem_exit(void *__user reserved)
 {
-    struct ghostmem_block *b, *tmp;
-    int nr = 0;
-
     pr_info("ghostmem: unloading...\n");
 
     /* Phase 1: 先摘 prctl，阻止新操作 */
     unhook_syscalln(__NR_prctl, prctl_before_gh, NULL);
 
     /* Phase 2: 释放全部遗留块（exit_mmap hook 仍在线，处理并发退出） */
-    gh_lock();
-    list_for_each_entry_safe(b, tmp, &ghostmem_block_list, list) {
-        list_del_init(&b->list);
-        ghostmem_release_block(b);
-        nr++;
-    }
-    gh_unlock();
-    pr_info("ghostmem: released %d leftover block(s)\n", nr);
+    ghostmem_free_blocks_for_mm(NULL, "module unload");
 
     /* Phase 3: 最后摘 exit_mmap */
     if (kfunc_exit_mmap)
