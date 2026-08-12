@@ -86,6 +86,12 @@ int main(int argc, char *argv[])
     rc = run_client(bin, self_argv);
     CHECK(rc == 1, "-a without module fails cleanly");
 
+    /* 5b. -n（alloc+自校验）无模块失败干净 */
+    self_argv[1] = (char *)"-p"; self_argv[2] = mypid;
+    self_argv[3] = (char *)"-n"; self_argv[4] = (char *)"16"; self_argv[5] = NULL;
+    rc = run_client(bin, self_argv);
+    CHECK(rc == 1, "-n without module fails cleanly");
+
     /* 6. 跨进程 -w（process_vm_writev）：fork 子进程暴露全局变量，
      * client 写入，子进程验证。这是 client 跨 pid 写幽灵内存的路径模拟。
      * 注：client 是 execv 的独立进程，非子进程祖先——Yama ptrace_scope=1
