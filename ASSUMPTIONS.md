@@ -26,3 +26,10 @@
 ## 并发
 
 - 仓库内存在用户自己的 codex 后台进程，可能并发提交。策略：不做 rebase/force-push，保留其提交（如 `ee0734e`）于历史中，工作树以我方版本为准。
+
+## 构建与测试（Iteration 36 后新增）
+
+- **host 模式 CMake**（Iteration 64）：`add_kpm_module` 探测编译器，非 aarch64 时跳过 KPM 目标生成（host 测试/客户端照常）——`cmake .. && cmake --build . && ctest` 单命令全仓验证。设备构建加 `-DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc` 恢复。
+- **rustFrida host 测试副本**（Iteration 61-62）：`host-tests/src/` 与 `trace-decoder/src/lz4_block.rs` 是 agent 模块的**同步副本**（独立 `[workspace]` + 子目录 `.cargo/config.toml` 覆盖根 android target）。agent 侧修改后须运行 `host-tests/sync.sh` 同步，否则副本漂移。
+- **trace-decoder 独立于 workspace**（Iteration 61）：从根 workspace members 移除，避免根 `.cargo/config.toml` 的 `[build] target = aarch64-linux-android` 强制 NDK linker。
+- **prctl 常量四副本**（内核头/client/ghostlinker/rustFrida）：ABI 测试自动锁定（ghostmem_abi_test 17 断言 + wxshadow_abi_test 8 断言）。
