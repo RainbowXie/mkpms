@@ -32,3 +32,7 @@ add_test(NAME wxshadow_pte_state_test COMMAND wxshadow_pte_state_test)
 # wxshadow BRK 编码 + ESR 分类逻辑测试（断点识别核心）
 add_executable(wxshadow_brk_esr_test tests/wxshadow_brk_esr_test.c)
 add_test(NAME wxshadow_brk_esr_test COMMAND wxshadow_brk_esr_test)
+
+# wxshadow TLB flush 三级回退优先级测试
+add_executable(wxshadow_tlb_test tests/wxshadow_tlb_test.c)
+add_test(NAME wxshadow_tlb_test COMMAND wxshadow_tlb_test)
