@@ -45,6 +45,11 @@ __attribute__((constructor)) static void ctor(void) {}
 EOF
 ./build/ghostlinker/ghostlinker_cli /tmp/mini.so
 # -> loaded: base=0x... size=20480 init_array=0x... nr_init=1
+
+# --run 只调用动态符号表中确认存在的导出构造器
+# （frame_dummy 等依赖未解析外部符号的 libgcc 条目会被跳过）
+./build/ghostlinker/ghostlinker_cli /tmp/mini.so --run
+# -> calling init: 0x...
 ```
 
 真机验证（ghostmem 模块已加载时）：分配来源自动切换到幽灵内存，加载后 `cat /proc/<pid>/maps | grep <base>` 应无输出。

@@ -42,12 +42,16 @@ kpatch module load /data/local/tmp/ghostmem.kpm base=0x200000000 limit=0x6000000
 
 # 分配 16 页 RWX 幽灵内存给 pid 1234
 ./ghostmem_client -p 1234 -a 16            # -> 0x100000000
-# 校验 maps 不可见
-./ghostmem_client -p 1234 -c 0x100000000   # -> INVISIBLE in maps (ok)
+# 校验区间 maps 不可见（可选长度，默认一页；可见时退出码 1）
+./ghostmem_client -p 1234 -c 0x100000000 65536   # -> INVISIBLE in maps (ok)
+# 分配后自校验整块不可见（脚本验收：echo $? == 0 即隐身）
+./ghostmem_client -p 1234 -n 16           # -> alloc 0x... INVISIBLE (ok)
 # 写入/读取/释放
 ./ghostmem_client -p 1234 -w 0x100000000 9090
 ./ghostmem_client -p 1234 -r 0x100000000 2
 ./ghostmem_client -p 1234 -f 0x100000000
+# 统计（INFO 仅支持 pid=0 当前进程）
+./ghostmem_client -p 1234 -i
 ```
 
 ## 生命周期
