@@ -2,7 +2,7 @@
 # run_all_tests.sh — 跨仓库一键全测试（mkpms + rustFrida host 侧）。
 #
 # 覆盖：
-#   mkpms:      ctest 19 套件（host 模式，KPM 模块自动跳过）
+#   mkpms:      ctest 20 套件（host 模式，KPM 模块自动跳过）
 #               kernel_syntax_check（14 内核源文件，需 KernelPatch 源码）
 #   rustFrida:  host-tests（10 测试）+ trace-decoder（8 测试）
 #
