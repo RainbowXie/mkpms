@@ -60,3 +60,7 @@ add_test(NAME wxshadow_comm_offset_test COMMAND wxshadow_comm_offset_test)
 # wxshadow task tasks_offset 检测逻辑（4 重验证）
 add_executable(wxshadow_tasks_offset_test tests/wxshadow_tasks_offset_test.c)
 add_test(NAME wxshadow_tasks_offset_test COMMAND wxshadow_tasks_offset_test)
+
+# wxshadow vdso 检测用户指针筛选 + ELF 魔数逻辑
+add_executable(wxshadow_vdso_test tests/wxshadow_vdso_test.c)
+add_test(NAME wxshadow_vdso_test COMMAND wxshadow_vdso_test)
