@@ -21,7 +21,7 @@ mkpms / SeamlessHook 项目的技术文档索引。
 
 ## 测试
 
-- mkpms：根构建 `ctest` 统一覆盖 8 套件 — `ghostmem_abi_test`（17）、`ghostmem_client_overlap_test`（8）、`ghostmem_args_test`（8）、`ghostmem_pgtable_harness`（37）、`ghostmem_core_harness`（19）、`ghostlinker_test`（16）、`ghostmem_client_e2e_test`（6+1 skip）、`wxshadow_abi_test`（8）
+- mkpms：根构建 `ctest` 统一覆盖 9 套件 — `ghostmem_abi_test`（17）、`ghostmem_client_overlap_test`（8）、`ghostmem_args_test`（8）、`ghostmem_pgtable_harness`（37）、`ghostmem_core_harness`（19）、`ghostlinker_test`（16）、`ghostlinker_cli_run`（1）、`ghostmem_client_e2e_test`（7+1 skip）、`wxshadow_abi_test`（8）
 - rustFrida：`lz4_block`（7 测试含 lz4_flex 互操作）、`ghostmem.rs`（5 测试）、`trace-decoder`（多块 roundtrip + 端到端）
 - **回归基线（Iteration 21 终检）**：跨套件全部通过 —— mkpms 2/2、ghostlinker 1/1、rustFrida 10/10、trace-decoder 1/1（共 24 项断言 + 2 端到端）
 - **内核语法核查（Iteration 27）**：`scripts/kernel_syntax_check.sh` 用真实 KernelPatch 框架头验证 8 个内核源文件（ghostmem 3 + wxshadow 5）全部通过
