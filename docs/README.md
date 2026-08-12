@@ -25,6 +25,8 @@ mkpms / SeamlessHook 项目的技术文档索引。
 - rustFrida：`lz4_block`（7 测试含 lz4_flex 互操作）、`ghostmem.rs`（5 测试）、`trace-decoder`（多块 roundtrip + 端到端）
 - **回归基线（Iteration 21 终检）**：跨套件全部通过 —— mkpms 2/2、ghostlinker 1/1、rustFrida 10/10、trace-decoder 1/1（共 24 项断言 + 2 端到端）
 - **内核语法核查（Iteration 27）**：`scripts/kernel_syntax_check.sh` 用真实 KernelPatch 框架头验证 8 个内核源文件（ghostmem 3 + wxshadow 5）全部通过
+- **最终回归矩阵（Iteration 32）**：mkpms ctest 5/5（60 断言）、ghostlinker 1/1（12）、rustFrida ghostmem 5/5、lz4_block 5/5（含标准库互操作）、trace-decoder 8/8（真实编码器 e2e）、内核语法 8/8 —— **全绿**
+- **执行级 harness**：pgtable 26 断言（map/unmap/reclaim/权限/共享表/PTE 拷贝）+ core 15 断言（空洞查找/alloc/free/RWX 归一化）——共抓出 3 个语法检查发现不了的真 bug（PTE_USER 缺失、prot==0 语义、表页残留）
 
 ## 关联仓库
 
