@@ -34,3 +34,18 @@ add_dependencies(ghostlinker_test ghl_payload)
 # CLI --run 测试：加载 payload 并调用导出构造器（验证输出含 calling init）
 add_test(NAME ghostlinker_cli_run
         COMMAND sh -c "$<TARGET_FILE:ghostlinker_cli> $<TARGET_FILE:ghl_payload> --run | grep -q 'calling init:'")
+
+# 非零 load_base 场景：-Ttext-segment 偏移首段 vaddr
+set(GHL_OFFBASE_SRC ${CMAKE_CURRENT_BINARY_DIR}/ghl_offbase.c)
+file(WRITE ${GHL_OFFBASE_SRC}
+"int g_value = 42;\n"
+"int *g_ptr = &g_value;\n"
+"int exported_add(int a, int b) { return a + b; }\n")
+add_library(ghl_offbase SHARED ${GHL_OFFBASE_SRC})
+set_target_properties(ghl_offbase PROPERTIES
+    LINK_FLAGS "-Wl,-Ttext-segment=0x400000")
+add_executable(ghostlinker_offbase_test tests/ghostlinker_offbase_test.c)
+target_link_libraries(ghostlinker_offbase_test ghostlinker)
+add_test(NAME ghostlinker_offbase_test
+        COMMAND ghostlinker_offbase_test $<TARGET_FILE:ghl_offbase>)
+add_dependencies(ghostlinker_offbase_test ghl_offbase)
