@@ -26,6 +26,8 @@
 #define PR_WXSHADOW_SET_BP      0x57580001
 #define PR_WXSHADOW_SET_REG     0x57580002
 #define PR_WXSHADOW_DEL_BP      0x57580003
+#define PR_WXSHADOW_SET_TLB_MODE 0x57580004
+#define PR_WXSHADOW_GET_TLB_MODE 0x57580005
 #define PR_WXSHADOW_PATCH       0x57580006
 #define PR_WXSHADOW_RELEASE     0x57580008
 
@@ -48,6 +50,7 @@ static void print_usage(const char *prog) {
     printf("  %s -p <pid> -a <addr> --patch <hex>   Patch shadow page\n", prog);
     printf("  %s -p <pid> -a <addr> --release       Release modification at addr\n", prog);
     printf("  %s -p <pid> --release                 Release ALL shadows\n", prog);
+    printf("  %s -p <pid> -t <mode>                 Set TLB flush mode (0=auto 1=precise 2=broadcast 3=full)\n", prog);
     printf("\nOptions:\n");
     printf("  -p, --pid <pid>       Target process ID (0 for self)\n");
     printf("  -a, --addr <addr>     Virtual address (hex, optional for -d/--release)\n");
@@ -330,6 +333,7 @@ int main(int argc, char *argv[]) {
     char *lib_name = NULL;
     int do_delete = 0;
     int do_maps = 0;
+    int tlb_mode = -1;  /* -1 = 未指定 */
     char *patch_hex = NULL;
     int do_release = 0;
     struct reg_mod reg_mods[MAX_REG_MODS];
@@ -343,7 +347,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    while ((opt = getopt_long(argc, argv, "p:a:b:o:r:dmh",
+    while ((opt = getopt_long(argc, argv, "p:a:b:o:r:dmht:",
                               long_options, &option_index)) != -1) {
         switch (opt) {
         case 'p':
@@ -383,6 +387,9 @@ int main(int argc, char *argv[]) {
         case 'L':
             do_release = 1;
             break;
+        case 't':
+            tlb_mode = atoi(optarg);
+            break;
         case 'h':
             print_usage(argv[0]);
             return 0;
@@ -395,6 +402,18 @@ int main(int argc, char *argv[]) {
     /* Show maps mode */
     if (do_maps) {
         show_maps(pid);
+        return 0;
+    }
+
+    /* TLB flush mode (set; get 需内核侧再确认，v1 仅 set) */
+    if (tlb_mode >= 0) {
+        long r = prctl(PR_WXSHADOW_SET_TLB_MODE, (unsigned long)tlb_mode, 0, 0, 0);
+        if (r < 0) {
+            fprintf(stderr, "SET_TLB_MODE(%d) failed: %s (errno=%d)\n",
+                    tlb_mode, strerror(errno), errno);
+            return 1;
+        }
+        printf("TLB mode set to %d (0=auto 1=precise 2=broadcast 3=full)\n", tlb_mode);
         return 0;
     }
 

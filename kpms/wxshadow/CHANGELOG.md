@@ -2,6 +2,11 @@
 
 ## [1.1.0] - 2026-01-14
 
+> **注**：本版本的 `PR_WXSHADOW_READ (0x57580006)` / `PR_WXSHADOW_ACTIVE (0x57580007)`
+> 接口已被后续版本重定义/移除：当前 `0x57580006` 为 `PR_WXSHADOW_PATCH`（内核
+> VA 写 shadow 页），`0x57580007` 未使用。client 的 `--read`/`--active` 选项同理
+> 已移除。以 `wxshadow.h` 为准。
+
 ### Added - 新增自定义 Hook 接口
 
 新增三个高级接口，允许用户自定义 hook 代码，而不是使用固定的 BRK 指令：
