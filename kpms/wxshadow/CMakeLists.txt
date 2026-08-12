@@ -36,3 +36,7 @@ add_test(NAME wxshadow_brk_esr_test COMMAND wxshadow_brk_esr_test)
 # wxshadow TLB flush 三级回退优先级测试
 add_executable(wxshadow_tlb_test tests/wxshadow_tlb_test.c)
 add_test(NAME wxshadow_tlb_test COMMAND wxshadow_tlb_test)
+
+# wxshadow task 链表遍历（字节偏移算术，历史 bug 回归）
+add_executable(wxshadow_next_task_test tests/wxshadow_next_task_test.c)
+add_test(NAME wxshadow_next_task_test COMMAND wxshadow_next_task_test)
