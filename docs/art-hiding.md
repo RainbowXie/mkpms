@@ -77,6 +77,14 @@ JNI (native)                       ghostmem 模块
 | 跳板落幽灵内存 | ✅ 前置就绪（ghostmem + stealth callbacks） |
 | 真机验证 | ⏳ 需 APatch 环境 |
 
+## 7. 与幽灵内存的结合点（#4 ↔ #6）
+
+`art_controller.rs` 的 replacement ArtMethod 当前用 C 堆（`libc::free` 释放）。与方案 #4 的结合：
+
+- **理论收益**：replacement 落入幽灵内存 → ART 内部扫描/内存特征检查找不到堆上的替换方法
+- **关键风险（GC 可达性）**：ArtMethod 含 GcRoot（declaring_class_），ART 的 GC 需要从根集可达这些对象。纯 VMA-Less 页不参与 GC 扫描 → 可能被回收或漏标。**结论：不做盲改**；若推进，需先在真机验证 GC 对幽灵页 ArtMethod 的处理，或用"幽灵内存 + 显式 GlobalRef 保根"组合。
+- **已落地替代**：OAT quick-method-header 隐藏 + JIT 缓存失效已让替换对 ART 内部不可见；堆分配本身在当前检测模型下未被枚举（真机验证项）。
+
 ## 关联
 
 - `docs/ghostmem.md`、`docs/stealth-trampolines.md` —— 跳板内存前置
