@@ -72,8 +72,8 @@ gum_set_stealth_alloc(stealth_alloc, stealth_free);
 |------|------|
 | 内核接口（ghostmem 模块） | ✅ 本仓库已完成 |
 | prctl 常量一致性 | ✅ 已核查（三处对齐） |
-| rustFrida `ghostmem.rs` 分配器 | ✅ 已实现（prctl VMA-Less + 3 tests） |
-| `gum_set_stealth_alloc` 接入 | ⏳ 待接（依赖 agent 构建链） |
+| rustFrida `ghostmem.rs` 分配器 + `stealth_alloc/free` 回调 | ✅ 已实现（prctl VMA-Less + 5 tests） |
+| `gum_set_stealth_alloc` 注册 | ⏳ 依赖 frida-gum 17.x（当前锁定 16.7.18 无此 API）+ agent 构建链 |
 | 真机验证 | ⏳ 需 APatch 环境 |
 
 ## 关联
