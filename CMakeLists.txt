@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.10)
 
 project(apps LANGUAGES C)
 
+# 允许子目录 add_test 注册（ghostmem ABI 自检等 host 测试）
+enable_testing()
+
 # 设置KP_DIR
 if(NOT DEFINED KP_DIR)
     set(KP_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
