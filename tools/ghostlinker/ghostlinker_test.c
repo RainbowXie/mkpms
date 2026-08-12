@@ -111,6 +111,37 @@ int main(int argc, char *argv[])
             ret = gh_link_elf(buf, sizeof(buf), &cb, &res);
             CHECK(ret == -ENOEXEC, "no PT_DYNAMIC -> ENOEXEC");
         }
+
+        /* 构造：PT_DYNAMIC 存在但缺 SYMTAB/STRTAB/RELA → process_dynamic -ENOEXEC */
+        {
+            unsigned char buf[512];
+            Elf64_Ehdr *e = (Elf64_Ehdr *)buf;
+            Elf64_Phdr *ph = (Elf64_Phdr *)(buf + sizeof(Elf64_Ehdr));
+            /* 布局：Ehdr + Phdr(2) + dyn 数组；dyn 的 d_ptr 用相对 VMA */
+            unsigned long dyn_off = sizeof(Elf64_Ehdr) + 2 * sizeof(Elf64_Phdr);
+            Elf64_Dyn *dyn = (Elf64_Dyn *)(buf + dyn_off);
+            memset(buf, 0, sizeof(buf));
+            memcpy(e->e_ident, ELFMAG, SELFMAG);
+            e->e_ident[EI_CLASS] = ELFCLASS64;
+            e->e_type = ET_DYN;
+            e->e_phoff = sizeof(Elf64_Ehdr);
+            e->e_phentsize = sizeof(Elf64_Phdr);
+            e->e_phnum = 2;
+            /* PT_LOAD：覆盖整个文件（含 dyn 数组） */
+            ph[0].p_type = PT_LOAD;
+            ph[0].p_vaddr = 0;
+            ph[0].p_offset = 0;
+            ph[0].p_filesz = 512;
+            ph[0].p_memsz = 512;
+            /* PT_DYNAMIC：指向只有 DT_NULL 的数组（无 SYMTAB/STRTAB/RELA） */
+            ph[1].p_type = PT_DYNAMIC;
+            ph[1].p_offset = dyn_off;
+            ph[1].p_vaddr = dyn_off; /* VMA == 文件偏移（load base=0） */
+            dyn[0].d_tag = DT_NULL;
+            dyn[0].d_un.d_val = 0;
+            ret = gh_link_elf(buf, sizeof(buf), &cb, &res);
+            CHECK(ret == -ENOEXEC, "missing DYNAMIC symtab/strtab/rela -> ENOEXEC");
+        }
     }
 
     /* 2. 真实加载 */
