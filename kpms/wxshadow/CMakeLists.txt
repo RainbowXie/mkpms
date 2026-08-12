@@ -24,3 +24,7 @@ add_executable(wxshadow_client_e2e_test tests/wxshadow_client_e2e_test.c)
 add_test(NAME wxshadow_client_e2e_test
         COMMAND wxshadow_client_e2e_test $<TARGET_FILE:wxshadow_client>)
 add_dependencies(wxshadow_client_e2e_test wxshadow_client)
+
+# wxshadow PTE 状态机逻辑执行级测试（restore/hidden/stepping 位语义）
+add_executable(wxshadow_pte_state_test tests/wxshadow_pte_state_test.c)
+add_test(NAME wxshadow_pte_state_test COMMAND wxshadow_pte_state_test)
