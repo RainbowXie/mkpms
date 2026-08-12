@@ -56,3 +56,7 @@ add_test(NAME wxshadow_vma_offset_test COMMAND wxshadow_vma_offset_test)
 # wxshadow task comm 偏移搜索逻辑
 add_executable(wxshadow_comm_offset_test tests/wxshadow_comm_offset_test.c)
 add_test(NAME wxshadow_comm_offset_test COMMAND wxshadow_comm_offset_test)
+
+# wxshadow task tasks_offset 检测逻辑（4 重验证）
+add_executable(wxshadow_tasks_offset_test tests/wxshadow_tasks_offset_test.c)
+add_test(NAME wxshadow_tasks_offset_test COMMAND wxshadow_tasks_offset_test)
