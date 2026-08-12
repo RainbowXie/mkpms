@@ -2,7 +2,7 @@
 # run_all_tests.sh — 跨仓库一键全测试（mkpms + rustFrida host 侧）。
 #
 # 覆盖：
-#   mkpms:      ctest 22 套件（host 模式，KPM 模块自动跳过）
+#   mkpms:      ctest 23 套件（host 模式，KPM 模块自动跳过）
 #               kernel_syntax_check（14 内核源文件，需 KernelPatch 源码）
 #   rustFrida:  host-tests（10 测试）+ trace-decoder（8 测试）
 #
@@ -48,7 +48,7 @@ else
 fi
 
 if [ $FAIL -eq 0 ]; then
-    echo "ALL TESTS PASSED (mkpms 22 suites + kernel 14 + rustFrida 18)"
+    echo "ALL TESTS PASSED (mkpms 23 suites + kernel 14 + rustFrida 18)"
 else
     echo "SOME TESTS FAILED"; exit 1
 fi
