@@ -45,6 +45,26 @@ wxshadow_client -p <pid> -a 0x7b5c001234                  # 断点生效
 dmesg | grep -E "wxshadow|ghostmem"                       # 双模块日志
 ```
 
+## rustFrida stealth hook 接线（方案 #5 全链路）
+
+`hook(ptr, cb, stealth=true)` 的完整调用链（Iteration 46-48 验证）：
+
+```
+JS hook(ptr, cb, true)
+  → hook_replace(addr, cb, addr, stealth=1)
+  → patch_target(target, thunk, stealth=1)
+  → wxshadow_patch(addr, buf, len)
+      prctl(PR_WXSHADOW_PATCH 0x57580006, pid=0→getpid(), addr, buf, len)
+      ├─ 成功：内核 shadow 页 one-step（copy + activate --x）
+      └─ 失败（PMD 2MB 大页）：pmd_split_cow
+           ├─ 整 VMA mprotect(rwx) —— 不分裂 VMA（防 V-OS maps 扫描）
+           ├─ 自我写回触发 COW 分裂 PMD（值不变，安全）
+           └─ 恢复 r-x，重试 PATCH
+```
+
+- prctl 常量跨仓库对齐已由 `wxshadow_abi_test`（8 断言）自动锁定。
+- 设计要点：整 VMA mprotect 避免 `/proc/maps` 出现 VMA 分裂（V-OS 检测面）。
+
 ## prctl 常量冲突审计
 
 | 族 | 范围 | 说明 |
