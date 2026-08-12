@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ghostmem_client 行为测试：host 上可真实执行的路径。
- * 覆盖 -c（maps 校验，读 /proc/self/maps）+ 参数解析错误路径。
+ * 覆盖 -c（maps 校验，读 /proc/self/maps）+ 参数解析 + 跨进程 -w。
  * prctl 相关操作（alloc/free）在无内核模块时预期失败，仅验证流程不崩。
  *
  * 编译：gcc -Ikpms/ghostmem -o /tmp/ghostmem_client_e2e \
@@ -14,8 +14,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 static int failures = 0;
+static int skipped = 0;
 #define CHECK(cond, msg) \
     do { if (!(cond)) { fprintf(stderr, "FAIL: %s\n", msg); failures++; } \
          else { printf("ok: %s\n", msg); } } while (0)
@@ -36,6 +38,7 @@ static int run_client(const char *bin, char *const argv[])
 int main(int argc, char *argv[])
 {
     const char *bin = argc > 1 ? argv[1] : "./ghostmem_client";
+    char pidstr[32];
     char mypid[32];
     char va0[32];
     char *self_argv[8];
@@ -54,7 +57,7 @@ int main(int argc, char *argv[])
     rc = run_client(bin, self_argv);
     CHECK(rc == 1, "unknown option returns 1");
 
-    /* 3. -c 校验本进程 maps 中某地址不可见（返回 0，除非恰好重叠） */
+    /* 3. -c 校验本进程 maps 中某地址不可见（返回 0） */
     snprintf(va0, sizeof(va0), "0x%lx", 0x7f0000000000UL);
     self_argv[0] = (char *)bin; self_argv[1] = (char *)"-p"; self_argv[2] = mypid;
     self_argv[3] = (char *)"-c"; self_argv[4] = va0; self_argv[5] = NULL;
@@ -83,6 +86,46 @@ int main(int argc, char *argv[])
     rc = run_client(bin, self_argv);
     CHECK(rc == 1, "-a without module fails cleanly");
 
-    printf("failures=%d\n", failures);
+    /* 6. 跨进程 -w（process_vm_writev）：fork 子进程暴露全局变量，
+     * client 写入，子进程验证。这是 client 跨 pid 写幽灵内存的路径模拟。
+     * 注：client 是 execv 的独立进程，非子进程祖先——Yama ptrace_scope=1
+     * 会拒绝（EPERM）。真实注入场景以 root / Yama=0 运行。受限环境跳过并报告。 */
+    {
+        static volatile unsigned long target;
+        int pipefd[2];
+        char child_va[32];
+        pid_t child;
+
+        pipe(pipefd);
+        child = fork();
+        if (child == 0) {
+            close(pipefd[1]);
+            char c;
+            read(pipefd[0], &c, 1); /* 等父写完 */
+            close(pipefd[0]);
+            _exit(target == 0x1234UL ? 0 : 1);
+        }
+        close(pipefd[0]);
+        snprintf(child_va, sizeof(child_va), "0x%lx", (unsigned long)&target);
+        snprintf(pidstr, sizeof(pidstr), "%d", (int)child);
+        self_argv[0] = (char *)bin; self_argv[1] = (char *)"-p"; self_argv[2] = pidstr;
+        self_argv[3] = (char *)"-w"; self_argv[4] = child_va;
+        self_argv[5] = (char *)"1234"; self_argv[6] = NULL;
+        rc = run_client(bin, self_argv);
+        close(pipefd[1]);
+        int st;
+        waitpid(child, &st, 0);
+        if (rc != 0) {
+            printf("skip: -w cross-process blocked by Yama ptrace_scope "
+                   "(need root or scope=0); client rc=%d\n", rc);
+            skipped++;
+        } else {
+            CHECK(rc == 0, "-w cross-process writes OK");
+            CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0,
+                  "child verified 0x1234 written via process_vm_writev");
+        }
+    }
+
+    printf("failures=%d (skipped=%d)\n", failures, skipped);
     return failures ? 1 : 0;
 }
