@@ -1,473 +1,449 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * VMA-Less Ghost Memory KPM Module - Core
+ * GhostMem KPM Module - Core
  *
- * Allocates physical pages and hand-builds PTE entries for a target process
- * WITHOUT creating a VMA, so the region is invisible in /proc/<pid>/maps.
- * Exposed via prctl. Lifecycle is tied to exit_mmap and module unload.
+ * VMA-Less 幽灵内存分配器：为指定进程在内核态分配物理页并手动构建 PTE，
+ * 不创建任何 VMA，使内存在 /proc/<pid>/maps 中不可见。用户态通过
+ * prctl(PR_GHOSTMEM_*, pid, ...) 使用，是 stealth trampoline / 自定义 Linker
+ * 的内存底座（见 docs/PLAN.md）。
  *
  * Copyright (C) 2024
  */
 
-#include "ghostmem.h"
+#include "ghostmem_internal.h"
 
-#ifndef __NR_prctl
-#define __NR_prctl 167
-#endif
+/* ========== Global state ========== */
 
-KPM_NAME("ghostmem");
-KPM_VERSION("0.1.0");
-KPM_LICENSE("GPL v2");
-KPM_AUTHOR("ghostmem");
-KPM_DESCRIPTION("VMA-Less Ghost Memory Allocator");
+struct list_head ghostmem_block_list = LIST_HEAD_INIT(ghostmem_block_list);
+DEFINE_SPINLOCK(ghostmem_lock);
+atomic_t gh_in_flight = ATOMIC_INIT(0);
 
-/* ========== Global definitions (single TU) ========== */
+/* ========== Kernel function pointers ========== */
 
-DEFINE_SPINLOCK(g_lock);
-LIST_HEAD(g_blocks);
-atomic_t gm_in_flight = ATOMIC_INIT(0);
-
-int gm_page_shift = 12;
-int gm_page_level = 0;
-int16_t mm_context_id_offset = -1;
-unsigned long page_offset_base;
-unsigned long gm_base_va = 0x1000000UL;      /* hole scan floor, above mmap_min_addr */
-
-/* Kernel function pointers */
 void *(*kfunc_find_vma)(void *mm, unsigned long addr);
 void *(*kfunc_get_task_mm)(void *task);
 void (*kfunc_mmput)(void *mm);
-void *kfunc_exit_mmap;
+void *kfunc_exit_mmap = NULL;
+
+void (*kfunc_rcu_read_lock)(void);
+void (*kfunc_rcu_read_unlock)(void);
+
 unsigned long (*kfunc___get_free_pages)(unsigned int gfp_mask, unsigned int order);
 void (*kfunc_free_pages)(unsigned long addr, unsigned int order);
-void (*kfunc_flush_tlb_page)(void *vma, unsigned long uaddr);
-void (*kfunc___flush_tlb_range)(void *vma, unsigned long start,
-                                 unsigned long end,
-                                 unsigned long stride, bool last_level,
-                                 int tlb_level);
-void (*kfunc___flush_icache_range)(unsigned long start, unsigned long end);
+
 void *(*kfunc_kzalloc)(size_t size, unsigned int flags);
 void (*kfunc_kfree)(void *ptr);
-long (*kfunc_copy_to_user)(void __user *to, const void *from, unsigned long n);
-void (*kfunc_copy_from_kernel_nofault)(void *dst, const void *src, size_t size);
 
-/* task / spinlock resolved via kallsyms */
-struct task_struct *(*gm_find_task_by_vpid)(pid_t nr);
-static void (*gm_raw_spin_lock)(raw_spinlock_t *lock);
-static void (*gm_raw_spin_unlock)(raw_spinlock_t *lock);
+long (*kfunc_copy_from_kernel_nofault)(void *dst, const void *src, size_t size);
 
-/* Route spin_lock to our resolved symbols (mirrors wxshadow). */
-#undef spin_lock
-#undef spin_unlock
-#define spin_lock(lock) gm_raw_spin_lock(&(lock)->rlock)
-#define spin_unlock(lock) gm_raw_spin_unlock(&(lock)->rlock)
+s64 *kvar_memstart_addr;
+s64 *kvar_physvirt_offset;
+unsigned long page_offset_base;
 
-/* ========== Symbol resolution ========== */
+int gh_page_shift;
+int gh_page_level;
 
-static int resolve_symbols(void)
+void (*gh_raw_spin_lock)(raw_spinlock_t *lock);
+void (*gh_raw_spin_unlock)(raw_spinlock_t *lock);
+void *(*kfunc_find_task_by_vpid)(pid_t nr);
+
+int ghostmem_detect_page_config(void)
 {
-    u64 tcr, t1sz;
-    u64 va_bits;
+    u64 tcr_el1;
+    u64 t1sz, va_bits, tg1;
 
-    pr_info("ghostmem: resolving symbols...\n");
-
-    gm_raw_spin_lock = (void *)lookup_name_safe("_raw_spin_lock");
-    gm_raw_spin_unlock = (void *)lookup_name_safe("_raw_spin_unlock");
-    gm_find_task_by_vpid = (void *)lookup_name_safe("find_task_by_vpid");
-    if (!gm_find_task_by_vpid || !gm_raw_spin_lock || !gm_raw_spin_unlock) {
-        pr_err("ghostmem: missing task/spinlock symbols\n");
-        return -ESRCH;
-    }
-
-    RESOLVE_SYMBOL(get_task_mm);
-    RESOLVE_SYMBOL(mmput);
-    RESOLVE_SYMBOL(find_vma);
-    RESOLVE_SYMBOL(__get_free_pages);
-    RESOLVE_SYMBOL(free_pages);
-    if (kfunc_kzalloc == NULL) kfunc_kzalloc = (void *)lookup_name_safe("kzalloc");
-    if (kfunc_kzalloc == NULL) kfunc_kzalloc = (void *)lookup_name_safe("__kmalloc");
-    if (kfunc_kzalloc == NULL) { pr_err("ghostmem: kzalloc missing\n"); return -ESRCH; }
-    kfunc_kfree = (void *)lookup_name_safe("kfree");
-    if (!kfunc_kfree) { pr_err("ghostmem: kfree missing\n"); return -ESRCH; }
-
-    kfunc_exit_mmap = (void *)lookup_name_safe("exit_mmap");
-    if (!kfunc_exit_mmap) {
-        pr_err("ghostmem: exit_mmap missing, cannot clean up on process exit\n");
-        return -ESRCH;
-    }
-
-    kfunc_flush_tlb_page = (void *)lookup_name_safe("flush_tlb_page");
-    kfunc___flush_tlb_range = (void *)lookup_name_safe("__flush_tlb_range");
-    kfunc___flush_icache_range = (void *)lookup_name_safe("__flush_icache_range");
-    kfunc_copy_from_kernel_nofault =
-        (void *)lookup_name_safe("copy_from_kernel_nofault");
-    kfunc_copy_to_user = (void *)lookup_name_safe("copy_to_user");
-
-    kvar_memstart_addr = (s64 *)lookup_name_safe("memstart_addr");
-    kvar_physvirt_offset = (s64 *)lookup_name_safe("physvirt_offset");
-    if (!kvar_memstart_addr) {
-        pr_err("ghostmem: memstart_addr missing\n");
-        return -ESRCH;
-    }
-
-    /* Detect page geometry from TCR_EL1 (identical to wxshadow). */
-    asm volatile("mrs %0, tcr_el1" : "=r"(tcr));
-    t1sz = (tcr >> 16) & 0x3f;
+    asm volatile("mrs %0, tcr_el1" : "=r"(tcr_el1));
+    t1sz = (tcr_el1 >> 16) & 0x3f;
     va_bits = 64 - t1sz;
-    {
-        u64 tg1 = (tcr >> 30) & 0x3;
-        gm_page_shift = 12;
-        if (tg1 == 1)
-            gm_page_shift = 14;
-        else if (tg1 == 3)
-            gm_page_shift = 16;
-    }
-    gm_page_level = (va_bits - 4) / (gm_page_shift - 3);
+    tg1 = (tcr_el1 >> 30) & 0x3;
+
+    gh_page_shift = 12;
+    if (tg1 == 1)
+        gh_page_shift = 14;
+    else if (tg1 == 3)
+        gh_page_shift = 16;
+    gh_page_level = (va_bits - 4) / (gh_page_shift - 3);
+
+    /* 计算用户地址空间上限 TASK_SIZE = 1UL << va_bits */
     page_offset_base = ~0UL << (va_bits - 1);
+    pr_info("ghostmem: va_bits=%lld page_shift=%d page_level=%d\n",
+            va_bits, gh_page_shift, gh_page_level);
+    return 0;
+}
 
-    /* Detect physvirt offset with an AT round-trip on a real page. */
+/* ========== Lock wrappers ========== */
+
+static inline void gh_lock(void)
+{
+    spin_lock(&ghostmem_lock);
+}
+
+static inline void gh_unlock(void)
+{
+    spin_unlock(&ghostmem_lock);
+}
+
+/* ========== pid -> mm ========== */
+
+/* Resolve pid to mm_struct, refcount held (caller must kfunc_mmput). */
+static void *gh_resolve_pid_to_mm(pid_t pid)
+{
+    void *mm;
+
+    if (pid == 0)
+        return kfunc_get_task_mm(current);
+
+    kfunc_rcu_read_lock();
     {
-        unsigned long test = kfunc___get_free_pages(0xcc0, 0);
-        if (test) {
-            unsigned long real = gm_vaddr_to_paddr(test);
-            if (real) {
-                detected_physvirt_offset = (s64)test - (s64)real;
-                physvirt_offset_valid = 1;
-            }
-            kfunc_free_pages(test, 0);
+        void *task = kfunc_find_task_by_vpid(pid);
+        if (!task) {
+            kfunc_rcu_read_unlock();
+            return NULL;
         }
+        mm = kfunc_get_task_mm(task);
     }
+    kfunc_rcu_read_unlock();
+    return mm;
+}
 
-    pr_info("ghostmem: page_shift=%d page_level=%d\n",
-            gm_page_shift, gm_page_level);
-    pr_info("ghostmem: symbols resolved\n");
+/* ========== VMA hole finding ========== */
+
+#define VMA_VM_START_OFFSET 0x00
+#define VMA_VM_END_OFFSET   0x08
+
+/* Scan base/limit: 落在堆顶与 mmap 区之间的大空洞内（48-bit VA 下远离两端） */
+#define GHOSTMEM_SCAN_BASE  0x100000000UL      /* 4GB */
+#define GHOSTMEM_SCAN_LIMIT 0x7000000000UL     /* 448GB */
+
+/*
+ * Find a VMA-less gap of @size bytes for @mm.
+ * 用 find_vma 从低到高跳过已占用区域；find_vma(mm, addr) 返回第一个
+ * vm_start >= addr 的 VMA（或 NULL 表示 addr 之上无映射）。
+ */
+static unsigned long gh_find_hole(void *mm, unsigned long size)
+{
+    unsigned long addr = GHOSTMEM_SCAN_BASE;
+    unsigned long vstart, vend;
+    void *vma;
+
+    size = (size + GHOSTMEM_PAGE_SIZE - 1) & GHOSTMEM_PAGE_MASK;
+
+    while (addr + size <= GHOSTMEM_SCAN_LIMIT) {
+        vma = kfunc_find_vma(mm, addr);
+        if (!vma)
+            return addr; /* 之上无映射，直接可用 */
+
+        vstart = *(unsigned long *)((char *)vma + VMA_VM_START_OFFSET);
+        vend = *(unsigned long *)((char *)vma + VMA_VM_END_OFFSET);
+
+        if (vstart > addr) {
+            /* [addr, vstart) 是空洞 */
+            if (vstart - addr >= size)
+                return addr;
+        }
+        addr = (vend + GHOSTMEM_PAGE_SIZE - 1) & GHOSTMEM_PAGE_MASK;
+    }
     return 0;
 }
 
-/* ========== alloc ========== */
+/* ========== Block management ========== */
+
+void *ghostmem_find_block(void *mm, unsigned long va)
+{
+    struct ghostmem_block *b;
+
+    gh_lock();
+    list_for_each_entry(b, &ghostmem_block_list, list) {
+        if (b->mm == mm && b->va == va) {
+            gh_unlock();
+            return b;
+        }
+    }
+    gh_unlock();
+    return NULL;
+}
 
 /*
- * gm_do_alloc - allocate a contiguous power-of-two chunk of physical pages,
- * build user RWX PTEs at a freshly chosen VMA-Less VA, and register a block.
- *
- * order = ceil(log2(nr_pages)); only the first nr_pages of the chunk are used
- * and recorded, the remainder stays reserved. Keeps the block record minimal
- * (base pfn) because free recomputes order from nr_pages.
+ * 解除 block 映射并释放物理页/块结构（调用时不持锁）。
+ * 被 do_free / exit_mmap / 模块卸载共用。
  */
-long gm_do_alloc(pid_t pid, unsigned long nr_pages, unsigned long prot,
-                 long *out_va)
+static void ghostmem_release_block(struct ghostmem_block *b)
 {
-    void *mm = NULL;
-    unsigned long va = 0;
-    unsigned long phys = 0;
-    unsigned long pfn;
-    unsigned int order;
     unsigned long i;
-    struct ghostmem_block *blk;
-    long ret;
 
-    (void)prot;   /* defaults to RWX per spec; CALLER_RWX not modelled here */
+    if (!b)
+        return;
+    ghostmem_unmap_pages(b->mm, b->va, b->nr_pages);
+    for (i = 0; i < b->nr_pages; i++) {
+        if (b->pfns[i])
+            kfunc_free_pages((unsigned long)gh_pfn_to_kaddr(b->pfns[i]), 0);
+    }
+    kfunc_kfree(b->pfns);
+    kfunc_kfree(b);
+}
 
-    if (nr_pages == 0 || nr_pages > 0x10000)
+/* 释放指定 mm 的全部幽灵块（exit_mmap / 卸载用）。 */
+void ghostmem_free_blocks_for_mm(void *mm, const char *reason)
+{
+    struct ghostmem_block *b, *tmp;
+    int nr = 0;
+
+    gh_lock();
+    list_for_each_entry_safe(b, tmp, &ghostmem_block_list, list) {
+        if (b->mm == mm) {
+            list_del_init(&b->list);
+            ghostmem_release_block(b);
+            nr++;
+        }
+    }
+    gh_unlock();
+    if (nr > 0)
+        pr_info("ghostmem: [%s] released %d block(s) for mm=%px\n", reason, nr, mm);
+}
+
+/* ========== prctl operations ========== */
+
+int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,
+                      unsigned long *out_va)
+{
+    struct ghostmem_block *b;
+    unsigned long va, size, kva, i;
+    int ret = 0;
+
+    if (nr_pages == 0 || nr_pages > GHOSTMEM_MAX_PAGES)
         return -EINVAL;
 
-    ret = gm_resolve_pid_to_mm(pid, &mm);
-    if (ret < 0)
-        return ret;
-
-    va = gm_find_hole_va(mm, nr_pages);
+    size = nr_pages * GHOSTMEM_PAGE_SIZE;
+    va = gh_find_hole(mm, size);
     if (!va) {
-        kfunc_mmput(mm);
+        pr_err("ghostmem: no VMA hole for %lu pages\n", nr_pages);
         return -ENOMEM;
     }
 
-    order = gm_order_of(nr_pages);
-    if (order > 9) {                    /* cap chunk at 2MB for sanity */
-        kfunc_mmput(mm);
+    b = kfunc_kzalloc(sizeof(*b), 0xcc0);
+    if (!b)
+        return -ENOMEM;
+    b->pfns = kfunc_kzalloc(nr_pages * sizeof(unsigned long), 0xcc0);
+    if (!b->pfns) {
+        kfunc_kfree(b);
         return -ENOMEM;
     }
 
-    phys = kfunc___get_free_pages(0xcc0, order);
-    if (!phys) {
-        kfunc_mmput(mm);
-        return -ENOMEM;
-    }
-    pfn = gm_vaddr_to_paddr(phys) >> PAGE_SHIFT;
-
+    /* 逐页分配物理页 */
     for (i = 0; i < nr_pages; i++) {
-        int created = 0;
-        u64 *ptep = get_or_create_user_pte(mm, va + i * PAGE_SIZE, &created);
-        if (!ptep) {
-            gm_clear_range_ptes(mm, va, i);
-            kfunc_free_pages(phys, order);
-            kfunc_mmput(mm);
-            return -ENOMEM;
+        kva = kfunc___get_free_pages(0xcc0, 0);
+        if (!kva) {
+            pr_err("ghostmem: page alloc failed at %lu/%lu\n", i, nr_pages);
+            ret = -ENOMEM;
+            goto err;
         }
-        ghostmem_set_pte(ptep, gm_make_pte(pfn + i, PTE_USER));
-    }
-    ghostmem_flush_tlb_range(NULL, va, nr_pages);
-
-    blk = kfunc_kzalloc(sizeof(*blk), 0xcc0);
-    if (!blk) {
-        gm_clear_range_ptes(mm, va, nr_pages);
-        kfunc_free_pages(phys, order);
-        kfunc_mmput(mm);
-        return -ENOMEM;
+        b->pfns[i] = gh_kaddr_to_pfn(kva);
     }
 
-    blk->mm = mm;
-    blk->va = va;
-    blk->nr_pages = nr_pages;
-    blk->pfn = pfn;
-    INIT_LIST_HEAD(&blk->list);
+    /* 手动构建 PTE（VMA-Less 映射） */
+    ret = ghostmem_map_pages(mm, va, b->pfns, nr_pages, prot);
+    if (ret < 0) {
+        pr_err("ghostmem: map pages failed: %d\n", ret);
+        goto err;
+    }
 
-    spin_lock(&g_lock);
-    list_add(&blk->list, &g_blocks);
-    spin_unlock(&g_lock);
+    b->mm = mm;
+    b->va = va;
+    b->nr_pages = nr_pages;
 
-    *out_va = (long)va;
-    pr_info("ghostmem: alloc pid=%d va=%lx pages=%lu pfn=%lx\n",
-            pid, va, nr_pages, pfn);
-    kfunc_mmput(mm);
+    gh_lock();
+    list_add_tail(&b->list, &ghostmem_block_list);
+    gh_unlock();
+
+    *out_va = va;
+    pr_info("ghostmem: alloc %lu page(s) at 0x%lx for mm=%px prot=0x%x\n",
+            nr_pages, va, mm, prot);
     return 0;
+
+err:
+    for (i = 0; i < nr_pages; i++) {
+        if (b->pfns[i])
+            kfunc_free_pages((unsigned long)gh_pfn_to_kaddr(b->pfns[i]), 0);
+    }
+    kfunc_kfree(b->pfns);
+    kfunc_kfree(b);
+    return ret;
 }
 
-/* ========== free ========== */
-
-/*
- * gm_do_free - free a block owning 'va' (single page in the block or the block
- * itself). Unknown/unregistered VA -> -EINVAL; double free is an error, never a
- * crash, because removal happens only after the physical pages are returned.
- */
-long gm_do_free(pid_t pid, unsigned long va)
+int ghostmem_do_free(void *mm, unsigned long va)
 {
-    struct ghostmem_block *blk = NULL;
-    struct list_head *pos;
-    void *mm = NULL;
-    unsigned long base;
-    long ret;
+    struct ghostmem_block *b;
 
-    ret = gm_resolve_pid_to_mm(pid, &mm);
-    if (ret < 0)
-        return ret;
-
-    base = va & PAGE_MASK;
-
-    spin_lock(&g_lock);
-    list_for_each(pos, &g_blocks) {
-        struct ghostmem_block *b = container_of(pos, struct ghostmem_block, list);
-        if (b->mm == mm && base >= b->va &&
-            base < b->va + b->nr_pages * PAGE_SIZE) {
-            blk = b;
-            break;
+    gh_lock();
+    list_for_each_entry(b, &ghostmem_block_list, list) {
+        if (b->mm == mm && b->va == va) {
+            list_del_init(&b->list);
+            gh_unlock();
+            ghostmem_release_block(b);
+            pr_info("ghostmem: freed block at 0x%lx for mm=%px\n", va, mm);
+            return 0;
         }
     }
-    if (blk) {
-        base = blk->va;
-        /* Drop the record only after we have captured the fields. */
-        list_del_init(&blk->list);
-    }
-    spin_unlock(&g_lock);
+    gh_unlock();
+    return -EINVAL; /* 未登记地址 */
+}
 
-    if (!blk) {
-        kfunc_mmput(mm);
+int ghostmem_do_info(void *mm, void __user *buf, unsigned long len)
+{
+    struct ghostmem_block *b;
+    struct ghostmem_stats stats = { 0, 0 };
+
+    gh_lock();
+    list_for_each_entry(b, &ghostmem_block_list, list) {
+        if (b->mm == mm) {
+            stats.nr_blocks++;
+            stats.nr_pages += b->nr_pages;
+        }
+    }
+    gh_unlock();
+
+    if (!buf || len < sizeof(stats))
         return -EINVAL;
-    }
-
-    gm_clear_range_ptes(mm, base, blk->nr_pages);
-    kfunc_free_pages(blk->pfn << PAGE_SHIFT, gm_order_of(blk->nr_pages));
-
-    kfunc_kfree(blk);
-    kfunc_mmput(mm);
-    pr_info("ghostmem: free va=%lx\n", base);
-    return 0;
+    return compat_copy_to_user(buf, &stats, sizeof(stats));
 }
 
-/* ========== info ========== */
+/* ========== prctl hook ========== */
 
-long gm_do_info(pid_t pid, void __user *buf, unsigned long len)
-{
-    struct ghostmem_stats st;
-    struct list_head *pos;
-    unsigned long pages = 0, blocks = 0, occ = 0;
-    void *mm = NULL;
-    long ret;
-
-    ret = gm_resolve_pid_to_mm(pid, &mm);
-    if (ret < 0)
-        return ret;
-
-    spin_lock(&g_lock);
-    list_for_each(pos, &g_blocks) {
-        struct ghostmem_block *b = container_of(pos, struct ghostmem_block, list);
-        if (b->mm != mm)
-            continue;
-        pages += b->nr_pages;
-        blocks++;
-        occ += b->nr_pages * PAGE_SIZE;
-    }
-    spin_unlock(&g_lock);
-    kfunc_mmput(mm);
-
-    if (!buf || len < sizeof(st))
-        return -EINVAL;
-
-    memset(&st, 0, sizeof(st));
-    st.total_pages = pages;
-    st.total_blocks = blocks;
-    st.occupied = occ;
-
-    if (kfunc_copy_to_user && kfunc_copy_to_user(buf, &st, sizeof(st)) != 0)
-        return -EFAULT;
-
-    return 0;
-}
-
-/* ========== teardown for exit_mmap / module unload ========== */
-
-/*
- * gm_teardown_all_for_mm - iterative pop-under-lock: clear PTEs, TLB flush,
- * free physical pages and drop the record for every block of 'mm' (or all when
- * mm == NULL). Captures fields under the lock, releases the lock, then acts, so
- * the prctl/free paths racing on unload never double-free a block.
- */
-void gm_teardown_all_for_mm(void *mm)
-{
-    while (1) {
-        struct ghostmem_block *blk = NULL;
-        void *bmm;
-        unsigned long va, nr, pfn;
-        struct list_head *pos;
-
-        spin_lock(&g_lock);
-        list_for_each(pos, &g_blocks) {
-            struct ghostmem_block *b = container_of(pos, struct ghostmem_block, list);
-            if (!mm || b->mm == mm) {
-                blk = b;
-                break;
-            }
-        }
-        if (!blk) {
-            spin_unlock(&g_lock);
-            break;
-        }
-        bmm = blk->mm;
-        va = blk->va;
-        nr = blk->nr_pages;
-        pfn = blk->pfn;
-        list_del_init(&blk->list);
-        spin_unlock(&g_lock);
-
-        gm_clear_range_ptes(bmm, va, nr);
-        kfunc_free_pages(pfn << PAGE_SHIFT, gm_order_of(nr));
-        kfunc_kfree(blk);
-        pr_info("ghostmem: teardown va=%lx pages=%lu\n", va, nr);
-    }
-}
-
-/* ========== prctl handler ========== */
-
-void prctl_before(hook_fargs4_t *args, void *udata)
+void prctl_before_gh(hook_fargs4_t *args, void *udata)
 {
     int option = (int)syscall_argn(args, 0);
     unsigned long arg2 = syscall_argn(args, 1);
     unsigned long arg3 = syscall_argn(args, 2);
     unsigned long arg4 = syscall_argn(args, 3);
-    long ret;
+    void *mm;
+    unsigned long va;
+    int ret;
+    pid_t pid;
 
     if (option < PR_GHOSTMEM_ALLOC || option > PR_GHOSTMEM_INFO)
         return;
 
-    GM_HANDLER_ENTER();
+    GH_HANDLER_ENTER();
 
     switch (option) {
-    case PR_GHOSTMEM_ALLOC: {
-        long va = 0;
-        ret = gm_do_alloc((pid_t)arg2, arg3, arg4, &va);
-        args->ret = ret == 0 ? va : (int)ret;
+    case PR_GHOSTMEM_ALLOC:
+        pid = (pid_t)arg2;
+        mm = gh_resolve_pid_to_mm(pid);
+        if (!mm) { args->ret = -ESRCH; args->skip_origin = 1; break; }
+        ret = ghostmem_do_alloc(mm, arg3, (unsigned int)arg4, &va);
+        kfunc_mmput(mm);
+        args->ret = ret ? ret : (long)va;
         args->skip_origin = 1;
         break;
-    }
+
     case PR_GHOSTMEM_FREE:
-        ret = gm_do_free((pid_t)arg2, arg3);
-        args->ret = (int)ret;
+        pid = (pid_t)arg2;
+        mm = gh_resolve_pid_to_mm(pid);
+        if (!mm) { args->ret = -ESRCH; args->skip_origin = 1; break; }
+        ret = ghostmem_do_free(mm, arg3);
+        kfunc_mmput(mm);
+        args->ret = ret;
         args->skip_origin = 1;
         break;
+
     case PR_GHOSTMEM_INFO:
-        ret = gm_do_info((pid_t)arg2, (void __user *)arg3, arg4);
-        args->ret = (int)ret;
+        pid = (pid_t)arg2;
+        mm = gh_resolve_pid_to_mm(pid);
+        if (!mm) { args->ret = -ESRCH; args->skip_origin = 1; break; }
+        ret = ghostmem_do_info(mm, (void __user *)arg3, arg4);
+        kfunc_mmput(mm);
+        args->ret = ret;
         args->skip_origin = 1;
         break;
+
     default:
         break;
     }
 
-    GM_HANDLER_EXIT();
+    GH_HANDLER_EXIT();
 }
 
-/* ========== exit_mmap handler ========== */
+/* ========== exit_mmap hook ========== */
 
-void exit_mmap_before(hook_fargs1_t *args, void *udata)
+void exit_mmap_before_gh(hook_fargs1_t *args, void *udata)
 {
     void *mm = (void *)args->arg0;
 
     if (!mm)
         return;
-    GM_HANDLER_ENTER();
-    gm_teardown_all_for_mm(mm);
-    GM_HANDLER_EXIT();
+    GH_HANDLER_ENTER();
+    ghostmem_free_blocks_for_mm(mm, "exit_mmap");
+    GH_HANDLER_EXIT();
 }
 
-/* ========== module init/exit ========== */
+/* ========== Module init/exit ========== */
 
-static long ghostmem_init(const char *args, const char *event, void __user *reserved)
+static long ghostmem_init(const char *args, const char *event, void *__user reserved)
 {
     int ret;
 
     pr_info("ghostmem: initializing...\n");
 
-    ret = resolve_symbols();
+    ret = ghostmem_resolve_symbols();
     if (ret < 0)
         return ret;
 
-    if (gm_page_level != 4) {
-        pr_err("ghostmem: unsupported page-table geometry (level=%d)\n",
-               gm_page_level);
-        return -ENOTSUPP;
-    }
+    ret = ghostmem_detect_page_config();
+    if (ret < 0)
+        return ret;
 
-    ret = hook_syscalln(__NR_prctl, 5, prctl_before, NULL, NULL);
+    ret = hook_syscalln(__NR_prctl, 5, prctl_before_gh, NULL, NULL);
     if (ret != HOOK_NO_ERR) {
-        pr_err("ghostmem: hook prctl failed: %d\n", ret);
+        pr_err("ghostmem: failed to hook prctl: %d\n", ret);
         return -1;
     }
+    pr_info("ghostmem: hooked prctl syscall\n");
 
-    ret = hook_wrap1(kfunc_exit_mmap, exit_mmap_before, NULL, NULL);
+    ret = hook_wrap1(kfunc_exit_mmap, exit_mmap_before_gh, NULL, NULL);
     if (ret != HOOK_NO_ERR) {
-        unhook_syscalln(__NR_prctl, prctl_before, NULL);
-        pr_err("ghostmem: hook exit_mmap failed: %d\n", ret);
+        pr_err("ghostmem: failed to hook exit_mmap: %d\n", ret);
+        unhook_syscalln(__NR_prctl, prctl_before_gh, NULL);
         return -1;
     }
+    pr_info("ghostmem: hooked exit_mmap for cleanup\n");
 
-    pr_info("ghostmem: loaded (prctl 0x%x/0x%x/0x%x)\n",
+    pr_info("ghostmem: module loaded (prctl 0x%x/0x%x/0x%x)\n",
             PR_GHOSTMEM_ALLOC, PR_GHOSTMEM_FREE, PR_GHOSTMEM_INFO);
     return 0;
 }
 
 static long ghostmem_exit(void *__user reserved)
 {
+    struct ghostmem_block *b, *tmp;
+    int nr = 0;
+
     pr_info("ghostmem: unloading...\n");
 
-    /* Block new user ops first, then release every block, then unhook
-     * exit_mmap. This ordering keeps teardown racing with live exits safe. */
-    unhook_syscalln(__NR_prctl, prctl_before, NULL);
+    /* Phase 1: 先摘 prctl，阻止新操作 */
+    unhook_syscalln(__NR_prctl, prctl_before_gh, NULL);
 
-    gm_teardown_all_for_mm(NULL);
+    /* Phase 2: 释放全部遗留块（exit_mmap hook 仍在线，处理并发退出） */
+    gh_lock();
+    list_for_each_entry_safe(b, tmp, &ghostmem_block_list, list) {
+        list_del_init(&b->list);
+        ghostmem_release_block(b);
+        nr++;
+    }
+    gh_unlock();
+    pr_info("ghostmem: released %d leftover block(s)\n", nr);
 
-    hook_unwrap(kfunc_exit_mmap, exit_mmap_before, NULL);
-    pr_info("ghostmem: unloaded\n");
+    /* Phase 3: 最后摘 exit_mmap */
+    if (kfunc_exit_mmap)
+        hook_unwrap(kfunc_exit_mmap, exit_mmap_before_gh, NULL);
+
+    pr_info("ghostmem: module unloaded\n");
     return 0;
 }
 
+KPM_NAME("ghostmem");
+KPM_VERSION("1.0.0");
+KPM_LICENSE("GPL v2");
+KPM_AUTHOR("ethan");
+KPM_DESCRIPTION("VMA-Less Ghost Memory - invisible RWX allocations via manual PTE");
 KPM_INIT(ghostmem_init);
 KPM_EXIT(ghostmem_exit);
