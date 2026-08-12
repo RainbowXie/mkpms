@@ -96,12 +96,17 @@ int main(int argc, char *argv[])
             CHECK(*g_ptr_p == g_value_p, "g_ptr -> g_value (reloc ok)");
     }
 
-    /* 4. 内部函数符号可寻址（不调用：PLT stub 未填充是 v1 非目标） */
+    /* 4. 内部函数符号可寻址且可调用（exported_add 无外部依赖，直接验证重定位） */
     {
-        void *fn = gh_link_find_symbol(&res, "exported_add");
-        CHECK(fn != NULL && fn >= (void *)res.base &&
-              fn < (void *)((char *)res.base + res.size),
-              "exported_add addressable in mapping");
+        int (*add_fn)(int, int) =
+            (int (*)(int, int))gh_link_find_symbol(&res, "exported_add");
+        CHECK(add_fn != NULL, "exported_add found");
+        if (add_fn) {
+            CHECK(add_fn(7, 8) == 15, "call exported_add(7,8) == 15");
+            CHECK(add_fn(-3, 10) == 7, "call exported_add(-3,10) == 7");
+        }
+        CHECK(gh_link_find_symbol(&res, NULL) == NULL, "find with NULL name");
+        CHECK(gh_link_find_symbol(NULL, "x") == NULL, "find with NULL res");
     }
 
     /* 5. 不存在的符号返回 NULL */
