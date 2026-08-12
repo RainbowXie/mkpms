@@ -169,6 +169,48 @@ static u64 ghostmem_make_pte(unsigned long pfn, unsigned int prot)
 
 /* ========== Public API ========== */
 
+/*
+ * 经 PTE 向当前进程的用户缓冲写 len 字节（wxshadow copy_from_user_via_pte 的
+ * 反向：内核 -> 用户）。不依赖 compat_copy_to_user（无符号时返回 0 假成功）。
+ * 仅支持单页内缓冲；buf 所在页必须有有效 PTE。
+ * 返回 0 成功，负 errno 失败。
+ */
+int ghostmem_copy_to_user_via_pte(void __user *ubuf, const void *from,
+                                  unsigned long len)
+{
+    void *mm;
+    unsigned long uaddr = (unsigned long)ubuf;
+    unsigned long buf_page = uaddr & ~(GHOSTMEM_PAGE_SIZE - 1);
+    unsigned long buf_off = uaddr & (GHOSTMEM_PAGE_SIZE - 1);
+    u64 *buf_pte;
+    unsigned long buf_pfn, buf_kaddr;
+
+    if (buf_off + len > GHOSTMEM_PAGE_SIZE || len == 0)
+        return -EINVAL;
+
+    mm = kfunc_get_task_mm(current);
+    if (!mm)
+        return -ESRCH;
+
+    buf_pte = ghostmem_get_pte(mm, buf_page);
+    if (!buf_pte || !(*buf_pte & PTE_VALID)) {
+        kfunc_mmput(mm);
+        return -EFAULT;
+    }
+
+    buf_pfn = (*buf_pte >> GHOSTMEM_PAGE_SHIFT) & 0xFFFFFFFFFUL;
+    buf_kaddr = (unsigned long)gh_pfn_to_kaddr(buf_pfn);
+    if (!gh_is_kva(buf_kaddr)) {
+        kfunc_mmput(mm);
+        return -EFAULT;
+    }
+
+    /* 单页内 memcpy 到用户物理页（dcache PIPT，用户/内核 VA 同物理行） */
+    memcpy((void *)(buf_kaddr + buf_off), from, len);
+    kfunc_mmput(mm);
+    return 0;
+}
+
 int ghostmem_map_pages(void *mm, unsigned long va, unsigned long *pfns,
                        unsigned long nr_pages, unsigned int prot)
 {

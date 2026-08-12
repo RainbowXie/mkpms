@@ -310,7 +310,9 @@ int ghostmem_do_info(void *mm, void __user *buf, unsigned long len)
 
     if (!buf || len < sizeof(stats))
         return -EINVAL;
-    return compat_copy_to_user(buf, &stats, sizeof(stats));
+    /* 经 PTE 写当前进程用户缓冲（避免 compat_copy_to_user 假成功路径）。
+     * INFO 要求 pid==0（当前进程）：跨进程用户缓冲无 VMA/PTE 保证。 */
+    return ghostmem_copy_to_user_via_pte(buf, &stats, sizeof(stats));
 }
 
 /* ========== prctl hook ========== */
@@ -353,7 +355,14 @@ void prctl_before_gh(hook_fargs4_t *args, void *udata)
         break;
 
     case PR_GHOSTMEM_INFO:
+        /* 经 PTE 拷贝仅支持当前进程缓冲（pid==0）；跨进程 INFO 需
+         * 目标进程的 mm，而缓冲在当前进程，语义不明，显式拒绝。 */
         pid = (pid_t)arg2;
+        if (pid != 0) {
+            args->ret = -EINVAL;
+            args->skip_origin = 1;
+            break;
+        }
         mm = gh_resolve_pid_to_mm(pid);
         if (!mm) { args->ret = -ESRCH; args->skip_origin = 1; break; }
         ret = ghostmem_do_info(mm, (void __user *)arg3, arg4);

@@ -185,7 +185,8 @@ int main(int argc, char *argv[])
     }
     case 'i': {
         struct ghostmem_stats st;
-        if (prctl(PR_GHOSTMEM_INFO, pid, (unsigned long)&st, sizeof(st), 0) < 0) {
+        /* INFO 仅支持 pid=0（当前进程自查询，经 PTE 拷贝缓冲） */
+        if (prctl(PR_GHOSTMEM_INFO, 0, (unsigned long)&st, sizeof(st), 0) < 0) {
             fprintf(stderr, "INFO failed: %s (errno=%d)\n", strerror(errno), errno);
             return 1;
         }

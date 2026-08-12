@@ -237,6 +237,10 @@ int ghostmem_map_pages(void *mm, unsigned long va, unsigned long *pfns,
 /* Clear PTE entries for [va, va+nr_pages) and flush TLB. */
 void ghostmem_unmap_pages(void *mm, unsigned long va, unsigned long nr_pages);
 
+/* Copy kernel data to current process's user buffer via PTE (no compat_copy_to_user). */
+int ghostmem_copy_to_user_via_pte(void __user *ubuf, const void *from,
+                                  unsigned long len);
+
 /* ========== ghostmem.c interfaces ========== */
 
 int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,
