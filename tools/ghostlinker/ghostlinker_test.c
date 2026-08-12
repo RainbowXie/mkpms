@@ -70,6 +70,28 @@ int main(int argc, char *argv[])
         CHECK(ret == -ENOEXEC, "reject non-ELF input");
     }
 
+    /* 1b. 错误路径：截断 / 坏 e_type / 缺 PT_LOAD */
+    {
+        /* 截断（不足 Ehdr） */
+        char tiny[8];
+        ret = gh_link_elf(tiny, sizeof(tiny), &cb, &res);
+        CHECK(ret == -EINVAL, "truncated input -> EINVAL");
+
+        /* 合法 ELF 魔数但 e_type 非法 */
+        Elf64_Ehdr eh;
+        memset(&eh, 0, sizeof(eh));
+        memcpy(eh.e_ident, ELFMAG, SELFMAG);
+        eh.e_ident[EI_CLASS] = ELFCLASS64;
+        eh.e_type = ET_EXEC; /* 仅支持 ET_DYN */
+        ret = gh_link_elf(&eh, sizeof(eh), &cb, &res);
+        CHECK(ret == -ENOEXEC, "ET_EXEC rejected (only ET_DYN)");
+
+        /* ET_DYN 但无 PT_LOAD（e_phnum=0 → compute_layout -EINVAL） */
+        eh.e_type = ET_DYN;
+        ret = gh_link_elf(&eh, sizeof(eh), &cb, &res);
+        CHECK(ret == -EINVAL, "no PT_LOAD -> EINVAL");
+    }
+
     /* 2. 真实加载 */
     elf = read_file(argv[1], &elf_size);
     CHECK(elf != NULL, "read payload .so");
