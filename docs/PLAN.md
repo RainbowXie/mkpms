@@ -13,7 +13,7 @@
 | 2 | **手动 PTE 页表** | 绕过 `sys_mmap`，从 `mm->pgd` 手动遍历页表写 PTE | maps / 内核 VMA 审计 | mkpms | ✅ 含于 #1 |
 | 3 | **自定义 Linker** | 在幽灵内存中手工映射 SO：解析 ELF、映射段、重定位 | soinfo / linker 符号比对 | mkpms | ✅ `tools/ghostlinker/`（v1，无 TLS） |
 | 4 | **Stealth Trampolines** | 替换 Gum 跳板分配器（`gum_set_stealth_alloc`），跳板自动落幽灵内存 | 代码段特征扫描 | rustFrida | 🕐 分配器 ✅（`ghostmem.rs`）；`gum_set_stealth_alloc` 接线待 agent 构建链 |
-| 5 | **W^X Shadow 断点** | shadow 页复制原始代码，断点写 shadow 页，读取切回原始页 | 指令内存比对（crc） | mkpms | ✅ 已有（wxshadow） |
+| 5 | **W^X Shadow 断点** | shadow 页复制原始代码，断点写 shadow 页，读取切回原始页 | 指令内存比对（crc） | mkpms | ✅ 已有（wxshadow）；rustFrida `hook(ptr, cb, stealth)` → `wxshadow_patch` 已对接（回退 mprotect） |
 | 6 | **ART 层特征隐蔽** | 隐藏 ART Hook 产生的运行时特征 | ART 内部检测 | rustFrida | ✅ 已有 `art_controller.rs`（ArtMethod 替换/OAT 隐藏/GC 同步）+ 设计文档（#4 结合点风险已分析） |
 | 7 | **Native 无痕 Hook** | 跳板/补丁全部走幽灵内存，主/子线程稳定 | 崩溃/闪退 | 依赖 #1/#4 | 🕐 依赖 #4 完成 |
 | 8 | **Stalker/QBDI 高速 Trace** | 指令级 trace + LZ4 实时压缩落盘 | 无（分析侧） | rustFrida | 🕐 Stalker LZ4 全链路 ✅（编码+落盘+host 解码器，e2e 验证）；QBDI 原生编码（基准角色）；基准对齐待真机 |
