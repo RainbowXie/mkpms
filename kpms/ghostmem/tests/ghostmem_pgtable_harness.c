@@ -95,7 +95,8 @@ static void stub_free_pages(unsigned long addr, unsigned int order)
 #define kvar_physvirt_offset NULL
 #define page_offset_base 0
 #define kfunc_exit_mmap NULL
-static void *stub_gtm(void *t) { (void)t; return NULL; }
+static void *g_current_mm = NULL;
+static void *stub_gtm(void *t) { (void)t; return g_current_mm; }
 static void stub_mmput(void *m) { (void)m; }
 
 /* gh_* 助手（harness：物理地址 == 指针值，单地址空间） */
@@ -143,9 +144,9 @@ static inline unsigned long gh_pxd_page_vaddr(u64 v) {
 #define PTE_TABLE_BIT (1UL << 1)
 #define GH_PXD_TYPE_TABLE 0x3UL
 
-#define ghostmem_copy_to_user_via_pte gh_ctu_stub_unused
 #include <errno.h>
-#define current ((void *)0)
+extern void *g_current_mm;
+#define current (g_current_mm)
 #include "ghostmem_pgtable.c"
 
 /* ---- 测试 ---- */
@@ -201,6 +202,59 @@ int main(void)
     CHECK(ghostmem_map_pages(&mm, va, pfns, 4, 7) == 0, "re-map ok");
     ghostmem_unmap_pages(&mm, va, 4);
     CHECK(page_count() == 0, "re-unmap reclaims (no leak)");
+
+    /* 8. copy_to_user_via_pte：向当前进程的用户缓冲页写数据 */
+    {
+        /* 模拟"用户缓冲页"：在 g_current_mm 里 map 一页（视为用户空间） */
+        stub_mm cur_mm;
+        u64 cur_pgd[512];
+        unsigned long buf_pfn = gh_kaddr_to_pfn(stub_get_free_pages(0, 0));
+        unsigned long buf_va = 0x20000000UL; /* 2GB，作为用户缓冲 */
+        const char payload[] = "GHOSTMEM-PTE-COPY";
+        char verify[32] = {0};
+        u64 *ptep;
+
+        memset(cur_pgd, 0, sizeof(cur_pgd));
+        cur_mm.pgd = cur_pgd;
+        g_current_mm = &cur_mm;
+
+        /* 用户缓冲页有 PTE（可写） */
+        CHECK(ghostmem_map_pages(&cur_mm, buf_va, &buf_pfn, 1, 7) == 0,
+              "map user buffer page");
+
+        /* 拷贝到用户缓冲中间偏移 */
+        CHECK(ghostmem_copy_to_user_via_pte((void *)(buf_va + 8), payload,
+                                            sizeof(payload)) == 0,
+              "copy_to_user_via_pte ok");
+
+        /* 验证字节落地（经物理页读回——用户 VA 在 harness 是模拟地址） */
+        memcpy(verify, (void *)((buf_pfn << 12) + 8), sizeof(payload));
+        CHECK(memcmp(verify, payload, sizeof(payload)) == 0,
+              "payload landed in user buffer");
+
+        /* 越界拒绝：跨页 */
+        CHECK(ghostmem_copy_to_user_via_pte((void *)(buf_va + PAGE_SIZE - 4),
+                                            payload, sizeof(payload)) == -EINVAL,
+              "cross-page copy rejected");
+
+        /* 未映射地址拒绝 */
+        CHECK(ghostmem_copy_to_user_via_pte((void *)0x50000000UL, payload,
+                                            sizeof(payload)) == -EFAULT,
+              "unmapped buffer rejected");
+
+        /* 无 current mm：返回 -ESRCH */
+        g_current_mm = NULL;
+        CHECK(ghostmem_copy_to_user_via_pte((void *)(buf_va + 8), payload,
+                                            sizeof(payload)) == -ESRCH,
+              "no current mm rejected");
+        g_current_mm = &cur_mm;
+
+        /* 清理 */
+        ghostmem_unmap_pages(&cur_mm, buf_va, 1);
+        ptep = ghostmem_get_pte(&cur_mm, buf_va);
+        CHECK(ptep == NULL || !(*ptep & PTE_VALID), "buffer page cleared");
+        stub_free_pages(buf_pfn << 12, 0);
+    }
 
     /* 7. 只读映射权限 */
     CHECK(ghostmem_map_pages(&mm, va, pfns, 1, GHOSTMEM_PROT_READ) == 0, "map RO");
