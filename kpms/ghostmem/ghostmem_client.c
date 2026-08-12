@@ -14,12 +14,18 @@
  *   ghostmem_client -p <pid> -n 16              # 分配 16 页并自校验不可见
  */
 
+/* process_vm_readv/writev 声明需要 _GNU_SOURCE */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 /* 与内核 ghostmem.h 保持一致 */
@@ -181,10 +187,23 @@ int main(int argc, char *argv[])
         if (range_in_maps(pid, va, n) > 0) {
             fprintf(stderr, "warning: range overlaps /proc/%d/maps (not ghost?)\n", pid);
         }
-        for (i = 0; i < n; i++) {
-            *(volatile unsigned char *)(va + i) = buf[i];
+        if (pid == 0) {
+            /* 自进程：幽灵页在自身地址空间，直接写 */
+            for (i = 0; i < n; i++) {
+                *(volatile unsigned char *)(va + i) = buf[i];
+            }
+        } else {
+            /* 跨进程：幽灵页在目标 mm，用 process_vm_writev（页有 PTE，GUP 可过） */
+            struct iovec local = { buf, (size_t)n };
+            struct iovec remote = { (void *)va, (size_t)n };
+            ssize_t wr = process_vm_writev(pid, &local, 1, &remote, 1, 0);
+            if (wr != n) {
+                fprintf(stderr, "writev failed: %s (errno=%d, wrote=%zd/%d)\n",
+                        strerror(errno), errno, wr, n);
+                return 1;
+            }
         }
-        printf("wrote %d byte(s) to 0x%lx\n", n, va);
+        printf("wrote %d byte(s) to 0x%lx (pid=%d)\n", n, va, pid);
         break;
     }
     case 'r': {
@@ -192,13 +211,35 @@ int main(int argc, char *argv[])
         if (range_in_maps(pid, va, len) > 0) {
             fprintf(stderr, "warning: range overlaps /proc/%d/maps (not ghost?)\n", pid);
         }
-        printf("read 0x%lx:\n", va);
-        for (j = 0; j < len; j++) {
-            printf("%02x ", *(volatile unsigned char *)(va + j));
-            if ((j & 15) == 15)
-                printf("\n");
+        printf("read 0x%lx (pid=%d):\n", va, pid);
+        if (pid == 0) {
+            /* 自进程：直接读 */
+            for (j = 0; j < len; j++) {
+                printf("%02x ", *(volatile unsigned char *)(va + j));
+                if ((j & 15) == 15)
+                    printf("\n");
+            }
+            printf("\n");
+        } else {
+            /* 跨进程：process_vm_readv */
+            unsigned char *rbuf = malloc(len ? len : 1);
+            struct iovec local = { rbuf, len };
+            struct iovec remote = { (void *)va, len };
+            ssize_t rd = process_vm_readv(pid, &local, 1, &remote, 1, 0);
+            if (rd != (ssize_t)len) {
+                fprintf(stderr, "readv failed: %s (errno=%d, read=%zd/%lu)\n",
+                        strerror(errno), errno, rd, len);
+                free(rbuf);
+                return 1;
+            }
+            for (j = 0; j < len; j++) {
+                printf("%02x ", rbuf[j]);
+                if ((j & 15) == 15)
+                    printf("\n");
+            }
+            printf("\n");
+            free(rbuf);
         }
-        printf("\n");
         break;
     }
     case 'i': {

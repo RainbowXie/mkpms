@@ -46,7 +46,7 @@ kpatch module load /data/local/tmp/ghostmem.kpm base=0x200000000 limit=0x6000000
 ./ghostmem_client -p 1234 -c 0x100000000 65536   # -> INVISIBLE in maps (ok)
 # 分配后自校验整块不可见（脚本验收：echo $? == 0 即隐身）
 ./ghostmem_client -p 1234 -n 16           # -> alloc 0x... INVISIBLE (ok)
-# 写入/读取/释放
+# 写入/读取（pid=0 直接访问；pid!=0 经 process_vm_readv/writev 跨进程）
 ./ghostmem_client -p 1234 -w 0x100000000 9090
 ./ghostmem_client -p 1234 -r 0x100000000 2
 ./ghostmem_client -p 1234 -f 0x100000000
