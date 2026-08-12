@@ -4,7 +4,9 @@
 
 ## 环境与验证
 
-- **无真机验证环境**：`aarch64-linux-gnu-gcc` 未安装、`.kp` submodule 未初始化，无法交叉编译/真机测试内核模块。验证方式 = **host gcc -fsyntax-only + 真实 KernelPatch 框架头**（`scripts/kernel_syntax_check.sh`，8 源文件全部通过）+ host 侧单元测试 + 代码审查。
+- **无真机验证环境**：`aarch64-linux-gnu-gcc` 未安装、`.kp` submodule 未初始化，无法交叉编译/真机测试内核模块。验证方式 = **host gcc -fsyntax-only + 真实 KernelPatch 框架头**（`scripts/kernel_syntax_check.sh`，**14 个 KPM 源文件全部通过**）+ host 侧单元测试 + 执行级 harness + 代码审查。
+- **执行级 harness 抓出 3 个语法检查发现不了的真 bug**（Iteration 28-30）：`ghostmem_make_pte` 漏 `PTE_USER`（用户进程无法访问）、`do_alloc` prot==0 默认 RWX 语义缺失、harness 页对齐桩需模拟 `__get_free_pages` 语义。均已在主干修复。
+- **验证体系单命令化**（Iteration 34）：根构建 `ctest` 统一跑 6 套件（81 断言）；KPM 模块 target 需交叉编译器（预期失败，host 测试 target 不受影响）。
 - KernelPatch 源码本地副本位于 `/mnt/data/Work/Projects/KernelPatch`（脚本需指定其路径或初始化 submodule）。
 - **宿主测试平台 = x86_64**：ghostlinker 的目标平台是 ARM64（Android），但 host gcc 产出 x86_64 ELF。为能在宿主机验证加载/重定位逻辑，ghostlinker 额外支持 `R_X86_64_*` 重定位类型（仅测试用途，非生产目标）。
 - **x86_64 RELA 格式**：假定 `gcc -shared` 产出纯 RELA（addend 在 `r_addend`，slot 初始为 0）。已用 readelf/实测确认。
