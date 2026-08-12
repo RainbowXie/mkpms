@@ -27,7 +27,9 @@
 - `kpms/wxshadow/` —— **#5 W^X Shadow 已完整实现**（~7500 行）：shadow 页状态机、BRK/单步 handler、`do_page_fault`/`follow_page_pte` 隐藏、fork 保护、TLB 三级 fallback、prctl 接口 + 静态客户端。
 - `kpms/ghostmem/` —— **#1/#2 幽灵内存已实现**：VMA-Less 分配/释放 + 手动 PTE（表页清零、dcache clean、空表回收）+ `prctl 0x47474d01..03` + `exit_mmap` 钩子 + 客户端 + ABI 自检（12 断言 ctest）。
 - `tools/ghostlinker/` —— **#3 自定义 Linker v1 已实现**：幽灵内存中 ELF 映射 + RELA 重定位 + 符号回调 + init_array；12 项 host 单测（含与 lz4 无关的加载验证）。
-- `kpms/hide-maps/`、`kpms/anti-detect/`、`kpms/demo-*` —— 辅助模块。
+- `kpms/hide-maps/` —— 隐藏 /proc 下的指定文件/目录（maps 可见性辅助）。
+- `kpms/anti-detect/` —— 隐藏模拟器文件防检测（环境对抗辅助）。
+- `kpms/demo-*` —— 示例模块。
 
 ### rustFrida（兄弟仓库）
 - `agent/src/`：`stalker.rs`（**LZ4 批落盘已接入**）、`trace/lz4_block.rs`（**新增**，7 测试含 lz4_flex 互操作）、`ghostmem.rs`（**新增**，#4 分配器）、`exec_mem.rs`、`quickjs_loader.rs`。
