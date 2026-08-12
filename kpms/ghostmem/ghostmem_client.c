@@ -244,8 +244,8 @@ int main(int argc, char *argv[])
     }
     case 'i': {
         struct ghostmem_stats st;
-        /* INFO 仅支持 pid=0（当前进程自查询，经 PTE 拷贝缓冲） */
-        if (prctl(PR_GHOSTMEM_INFO, 0, (unsigned long)&st, sizeof(st), 0) < 0) {
+        /* 统计 pid 目标进程的幽灵块（缓冲在 client 自身，PTE 拷贝） */
+        if (prctl(PR_GHOSTMEM_INFO, pid, (unsigned long)&st, sizeof(st), 0) < 0) {
             fprintf(stderr, "INFO failed: %s (errno=%d)\n", strerror(errno), errno);
             return 1;
         }

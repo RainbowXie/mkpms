@@ -191,6 +191,12 @@ static u64 ghostmem_make_pte(unsigned long pfn, unsigned int prot)
 int ghostmem_copy_to_user_via_pte(void __user *ubuf, const void *from,
                                   unsigned long len)
 {
+#ifdef GHOSTMEM_CORE_HARNESS
+    /* core harness 只测统计逻辑；PTE 拷贝语义在 pgtable harness 验证。
+     * 此处直接拷贝到 buf（模拟成功），使调用方读到 stats。 */
+    memcpy((void *)ubuf, from, len);
+    return 0;
+#else
     void *mm;
     unsigned long uaddr = (unsigned long)ubuf;
     unsigned long buf_page = uaddr & ~(GHOSTMEM_PAGE_SIZE - 1);
@@ -222,6 +228,7 @@ int ghostmem_copy_to_user_via_pte(void __user *ubuf, const void *from,
     memcpy((void *)(buf_kaddr + buf_off), from, len);
     kfunc_mmput(mm);
     return 0;
+#endif /* GHOSTMEM_CORE_HARNESS */
 }
 
 int ghostmem_map_pages(void *mm, unsigned long va, unsigned long *pfns,

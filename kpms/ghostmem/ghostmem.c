@@ -366,14 +366,9 @@ void prctl_before_gh(hook_fargs4_t *args, void *udata)
         break;
 
     case PR_GHOSTMEM_INFO:
-        /* 经 PTE 拷贝仅支持当前进程缓冲（pid==0）；跨进程 INFO 需
-         * 目标进程的 mm，而缓冲在当前进程，语义不明，显式拒绝。 */
+        /* 统计目标进程（任意 pid）的幽灵块；缓冲始终是当前进程的
+         * （PTE 拷贝经 current 的 mm），两者解耦，无需限制 pid。 */
         pid = (pid_t)arg2;
-        if (pid != 0) {
-            args->ret = -EINVAL;
-            args->skip_origin = 1;
-            break;
-        }
         mm = gh_resolve_pid_to_mm(pid);
         if (!mm) { args->ret = -ESRCH; args->skip_origin = 1; break; }
         ret = ghostmem_do_info(mm, (void __user *)arg3, arg4);

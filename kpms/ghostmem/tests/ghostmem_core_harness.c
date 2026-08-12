@@ -103,7 +103,8 @@ static void stub_free_page(unsigned long addr, unsigned int order)
         }
     }
 }
-static void *stub_gtm(void *t) { (void)t; return NULL; }
+static void *g_current_mm = NULL;
+static void *stub_gtm(void *t) { (void)t; return g_current_mm; }
 static void stub_mmput(void *m) { (void)m; }
 static void *stub_ftbv(pid_t p) { (void)p; return NULL; }
 /* kfunc 指针变量定义（指向 stub；ghostmem.c 引用同名外部符号） */
@@ -151,7 +152,8 @@ static inline unsigned long gh_pxd_page_vaddr(u64 v) { return v & 0x0000FFFFFFFF
 #define GH_PXD_TYPE_TABLE 0x3UL
 
 #include <errno.h>
-#define current ((void *)0)
+#define current (g_current_mm)
+/* core harness 只测统计；PTE 拷贝在 pgtable harness 验证（pgtable.c 内有守卫） */
 #include "ghostmem_pgtable.c"
 
 /* ---- struct ghostmem_block（internal.h 被屏蔽，需补齐） ---- */
@@ -258,6 +260,22 @@ int main(void)
         ghostmem_do_alloc(&mm, 1, 0, &va);
         ghostmem_free_blocks_for_mm(&mm, "test");
         CHECK(ghostmem_do_free(&mm, va) == -EINVAL, "block freed via free_blocks_for_mm");
+    }
+
+    /* 7. do_info：统计目标 mm 的块数/页数（任意 pid 语义，缓冲解耦） */
+    {
+        unsigned long va;
+        struct ghostmem_stats st = { 0, 0 };
+        ghostmem_do_alloc(&mm, 3, 0, &va);
+        CHECK(ghostmem_do_info(&mm, (void *)&st, sizeof(st)) == 0, "do_info ok");
+        CHECK(st.nr_blocks == 1 && st.nr_pages == 3, "do_info counts 1 block / 3 pages");
+        /* 释放后归零 */
+        ghostmem_do_free(&mm, va);
+        memset(&st, 0, sizeof(st));
+        CHECK(ghostmem_do_info(&mm, (void *)&st, sizeof(st)) == 0, "do_info after free");
+        CHECK(st.nr_blocks == 0 && st.nr_pages == 0, "do_info zero after free");
+        /* 越界缓冲拒绝 */
+        CHECK(ghostmem_do_info(&mm, (void *)&st, 4) == -EINVAL, "info len too small rejected");
     }
 
     printf("failures=%d\n", failures);
