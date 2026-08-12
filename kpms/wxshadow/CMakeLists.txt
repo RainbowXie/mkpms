@@ -28,3 +28,7 @@ add_dependencies(wxshadow_client_e2e_test wxshadow_client)
 # wxshadow PTE 状态机逻辑执行级测试（restore/hidden/stepping 位语义）
 add_executable(wxshadow_pte_state_test tests/wxshadow_pte_state_test.c)
 add_test(NAME wxshadow_pte_state_test COMMAND wxshadow_pte_state_test)
+
+# wxshadow BRK 编码 + ESR 分类逻辑测试（断点识别核心）
+add_executable(wxshadow_brk_esr_test tests/wxshadow_brk_esr_test.c)
+add_test(NAME wxshadow_brk_esr_test COMMAND wxshadow_brk_esr_test)
