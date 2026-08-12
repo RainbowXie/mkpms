@@ -235,9 +235,9 @@ int ghostmem_do_alloc(void *mm, unsigned long nr_pages, unsigned int prot,
         return -ENOMEM;
     }
 
-    /* 逐页分配物理页 */
+    /* 逐页分配物理页（GFP_KERNEL|__GFP_ZERO：清零，避免内核数据残留泄露给用户态） */
     for (i = 0; i < nr_pages; i++) {
-        kva = kfunc___get_free_pages(0xcc0, 0);
+        kva = kfunc___get_free_pages(0xdc0, 0);
         if (!kva) {
             pr_err("ghostmem: page alloc failed at %lu/%lu\n", i, nr_pages);
             ret = -ENOMEM;
