@@ -49,3 +49,16 @@ target_link_libraries(ghostlinker_offbase_test ghostlinker)
 add_test(NAME ghostlinker_offbase_test
         COMMAND ghostlinker_offbase_test $<TARGET_FILE:ghl_offbase>)
 add_dependencies(ghostlinker_offbase_test ghl_offbase)
+
+# BSS 清零路径（memsz > filesz 段）
+set(GHL_BSS_SRC ${CMAKE_CURRENT_BINARY_DIR}/ghl_bss.c)
+file(WRITE ${GHL_BSS_SRC}
+"int g_value = 42;\n"
+"int g_bss[256];\n"
+"int exported_bss_sum(void) { int s=0; for(int i=0;i<256;i++) s+=g_bss[i]; return s; }\n")
+add_library(ghl_bss SHARED ${GHL_BSS_SRC})
+add_executable(ghostlinker_bss_test tests/ghostlinker_bss_test.c)
+target_link_libraries(ghostlinker_bss_test ghostlinker)
+add_test(NAME ghostlinker_bss_test
+        COMMAND ghostlinker_bss_test $<TARGET_FILE:ghl_bss>)
+add_dependencies(ghostlinker_bss_test ghl_bss)
