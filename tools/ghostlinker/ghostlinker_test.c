@@ -90,6 +90,27 @@ int main(int argc, char *argv[])
         eh.e_type = ET_DYN;
         ret = gh_link_elf(&eh, sizeof(eh), &cb, &res);
         CHECK(ret == -EINVAL, "no PT_LOAD -> EINVAL");
+
+        /* 构造：ET_DYN + PT_LOAD 但无 PT_DYNAMIC → -ENOEXEC */
+        {
+            unsigned char buf[256];
+            Elf64_Ehdr *e = (Elf64_Ehdr *)buf;
+            Elf64_Phdr *ph = (Elf64_Phdr *)(buf + sizeof(Elf64_Ehdr));
+            memset(buf, 0, sizeof(buf));
+            memcpy(e->e_ident, ELFMAG, SELFMAG);
+            e->e_ident[EI_CLASS] = ELFCLASS64;
+            e->e_type = ET_DYN;
+            e->e_phoff = sizeof(Elf64_Ehdr);
+            e->e_phentsize = sizeof(Elf64_Phdr);
+            e->e_phnum = 1;
+            ph[0].p_type = PT_LOAD;
+            ph[0].p_vaddr = 0;
+            ph[0].p_offset = 0;
+            ph[0].p_filesz = 0x100;
+            ph[0].p_memsz = 0x100;
+            ret = gh_link_elf(buf, sizeof(buf), &cb, &res);
+            CHECK(ret == -ENOEXEC, "no PT_DYNAMIC -> ENOEXEC");
+        }
     }
 
     /* 2. 真实加载 */
