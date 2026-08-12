@@ -22,11 +22,14 @@ mkpms / SeamlessHook 项目的技术文档索引。
 ## 测试
 
 ```bash
-# 单命令全仓验证（host 模式：KPM 模块自动跳过，host 测试/客户端照常）
+# 跨仓库一键全测试（mkpms ctest + 内核语法 + rustFrida host 侧）
+./scripts/run_all_tests.sh /mnt/data/Work/Projects/KernelPatch
+
+# 仅 mkpms（host 模式：KPM 模块自动跳过，host 测试/客户端照常）
 cmake -S . -B build -DKP_DIR=$PWD
 cmake --build build
 ctest --test-dir build
-# => 9 套件全部通过（无需交叉编译器）
+# => 19 套件全部通过（无需交叉编译器）
 ```
 
 - host 模式下 `add_kpm_module` 自动跳过 KPM 目标（非 aarch64 编译器）；设备构建加 `-DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc` 即恢复。
