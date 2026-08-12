@@ -1,5 +1,15 @@
 # android 无痕probe 无痕hook kpm demo
-对任意地址设置断点，打印、修改寄存器，缺陷：无法对自读代码区域设置断点，同一页无法同时读取和执行
+
+对任意地址设置断点，打印、修改寄存器，缺陷：无法对自读代码区域设置断点，同一页无法同时读取和执行。
+
+包含模块：
+- `wxshadow` — W^X Shadow 隐藏断点（shadow 页 + prctl 接口 + 客户端）
+- `ghostmem` — VMA-Less 幽灵内存（手动 PTE，不登记 maps），stealth trampoline / 自定义 Linker 的内存底座（见 `docs/ghostmem.md`）
+- `hide-maps` / `anti-detect` / `demo-*` — 辅助与示例
+
+工具：`tools/ghostlinker/` — 自定义 Linker v1，在幽灵内存中手工映射 ELF（见 `docs/ghostlinker.md`）。
+
+总计划与方案调研：`docs/PLAN.md`。
 
 git config submodule.recurse true 自动更新submodule
 # 使用方法
