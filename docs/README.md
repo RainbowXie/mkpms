@@ -31,7 +31,7 @@ ctest --test-dir build
 
 - host 模式下 `add_kpm_module` 自动跳过 KPM 目标（非 aarch64 编译器）；设备构建加 `-DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc` 即恢复。
 
-- mkpms：根构建 `ctest` 统一覆盖 10 套件 — `ghostmem_abi_test`（17）、`ghostmem_client_overlap_test`（14）、`ghostmem_args_test`（8）、`ghostmem_pgtable_harness`（37）、`ghostmem_core_harness`（26）、`ghostlinker_test`（16）、`ghostlinker_cli_run`（1）、`ghostmem_client_e2e_test`（7+1 skip）、`wxshadow_abi_test`（8）、`wxshadow_client_e2e_test`（5）
+- mkpms：根构建 `ctest` 统一覆盖 12 套件 — `ghostmem_abi_test`（17）、`ghostmem_client_overlap_test`（14）、`ghostmem_args_test`（8）、`ghostmem_pgtable_harness`（37）、`ghostmem_core_harness`（26）、`ghostlinker_test`（16）、`ghostlinker_cli_run`（1）、`ghostmem_client_e2e_test`（7+1 skip）、`wxshadow_abi_test`（8）、`wxshadow_client_e2e_test`（5）、`wxshadow_pte_state_test`（15）、`wxshadow_brk_esr_test`（15）
 - rustFrida：仓库内 `cargo test` 直跑 — `host-tests`（10 测试：ghostmem 5 + lz4 5 含标准库互操作）、`trace-decoder`（8 测试：多块 roundtrip + 真实编码器 e2e + 性能验收）——均无需 NDK（独立 host target 配置）
 - **回归基线（Iteration 21 终检）**：跨套件全部通过 —— mkpms 2/2、ghostlinker 1/1、rustFrida 10/10、trace-decoder 1/1（共 24 项断言 + 2 端到端）
 - **内核语法核查（Iteration 27）**：`scripts/kernel_syntax_check.sh` 用真实 KernelPatch 框架头验证 8 个内核源文件（ghostmem 3 + wxshadow 5）全部通过
