@@ -18,6 +18,25 @@
 /* ========== Walk helpers ========== */
 
 /*
+ * Clean dcache to PoU for a kernel VA range (wxshadow 同款实现)。
+ * 表页由 ARM64 表 walker 读取：写入表描述符后必须 dc cvau，否则
+ * walker 可能读到脏 dcache 行（尤其跨核 / 无缓存一致性场景）。
+ */
+static void ghostmem_flush_kern_dcache(unsigned long kva, unsigned long size)
+{
+    unsigned long addr, end;
+    u64 ctr_el0, line_size;
+
+    asm volatile("mrs %0, ctr_el0" : "=r"(ctr_el0));
+    line_size = 4 << ((ctr_el0 >> 16) & 0xf);
+
+    end = kva + size;
+    for (addr = kva & ~(line_size - 1); addr < end; addr += line_size)
+        asm volatile("dc cvau, %0" : : "r"(addr) : "memory");
+    asm volatile("dsb ish" : : : "memory");
+}
+
+/*
  * Walk to the PTE entry for @addr without allocating intermediate tables.
  * Returns NULL when any level is missing or not a table descriptor.
  */
@@ -64,6 +83,8 @@ static unsigned long ghostmem_alloc_table(u64 *parent)
         return 0;
     phys = gh_kaddr_to_phys(kva);
     *parent = (phys & 0x0000FFFFFFFFF000UL) | PTE_VALID | PTE_TABLE_BIT;
+    /* 新表页写入的表描述符必须对表 walker 可见 */
+    ghostmem_flush_kern_dcache(kva, GHOSTMEM_PAGE_SIZE);
     return kva;
 }
 
@@ -191,7 +212,6 @@ static void ghostmem_reclaim_tables(void *mm, unsigned long va)
     unsigned long pte_kva, pmd_kva = 0, pud_kva = 0;
 
     /* 找到该地址所在 PTE 表页 */
-    pmd = NULL;
     pgd = (u64 *)gh_mm_pgd(mm) + gh_pgd_index(va);
     if (!gh_safe_read_u64((unsigned long)pgd, &pgd_val) || !pgd_val ||
         (pgd_val & 0x3UL) != GH_PXD_TYPE_TABLE)
