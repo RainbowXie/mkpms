@@ -10,6 +10,8 @@
  *   ghostmem_client -p <pid> -r 0x7f00000000 8  # 读 8 字节
  *   ghostmem_client -p <pid> -i                # 统计信息
  *   ghostmem_client -p <pid> -c 0x7f00000000    # 校验 maps 中不可见
+ *   ghostmem_client -p <pid> -c 0x7f00000000 65536  # 校验 64KB 区间
+ *   ghostmem_client -p <pid> -n 16              # 分配 16 页并自校验不可见
  */
 
 #include <errno.h>
@@ -43,8 +45,8 @@ static void print_usage(const char *prog)
         "  -w <va> <hexbytes>        write hex bytes to VA\n"
         "  -r <va> <len>             read len bytes from VA (hex dump)\n"
         "  -i                        print ghostmem stats for pid\n"
-        "  -c <va>                   verify VA absent from /proc/<pid>/maps\n",
-        prog);
+        "  -c <va> [len]            verify range absent from /proc/<pid>/maps\n"
+        "  -n <pages>                alloc then self-verify invisibility\n",        prog);
 }
 
 static int parse_prot(const char *s)
@@ -54,6 +56,13 @@ static int parse_prot(const char *s)
     if (strchr(s, 'w')) prot |= GHOSTMEM_PROT_WRITE;
     if (strchr(s, 'x')) prot |= GHOSTMEM_PROT_EXEC;
     return prot ? prot : (GHOSTMEM_PROT_READ | GHOSTMEM_PROT_WRITE | GHOSTMEM_PROT_EXEC);
+}
+
+/* 区间相交判定：[va, va+len) 与 [start, end) 是否有重叠 */
+static int ranges_overlap(unsigned long va, unsigned long len,
+                          unsigned long start, unsigned long end)
+{
+    return va < end && va + len > start;
 }
 
 /* 读 /proc/<pid>/maps，判断区间 [va, va+len) 是否与任何 VMA 重叠 */
@@ -72,7 +81,7 @@ static int range_in_maps(pid_t pid, unsigned long va, unsigned long len)
         unsigned long start, end;
         char perms[8];
         if (sscanf(line, "%lx-%lx %7s", &start, &end, perms) == 3) {
-            if (va < end && va + len > start) {
+            if (ranges_overlap(va, len, start, end)) {
                 overlap = 1;
                 break;
             }
@@ -82,6 +91,7 @@ static int range_in_maps(pid_t pid, unsigned long va, unsigned long len)
     return overlap;
 }
 
+#ifndef GHOSTMEM_CLIENT_UNIT_TEST
 int main(int argc, char *argv[])
 {
     pid_t pid = 0;
@@ -112,6 +122,14 @@ int main(int argc, char *argv[])
         } else if (!strcmp(argv[i], "-c") && i + 1 < argc) {
             va = strtoul(argv[++i], NULL, 0);
             op = 'c';
+            /* 可选第二参数：校验长度（默认一页） */
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                len = strtoul(argv[++i], NULL, 0);
+            }
+        } else if (!strcmp(argv[i], "-n") && i + 1 < argc) {
+            /* 分配后自校验块区间 maps 不可见 */
+            nr_pages = strtoul(argv[++i], NULL, 0);
+            op = 'n';
         } else if (!strcmp(argv[i], "--prot") && i + 1 < argc) {
             prot = parse_prot(argv[++i]);
         } else {
@@ -194,7 +212,8 @@ int main(int argc, char *argv[])
         break;
     }
     case 'c': {
-        int ov = range_in_maps(pid, va, 4096);
+        unsigned long check_len = len ? len : 4096;
+        int ov = range_in_maps(pid, va, check_len);
         if (ov < 0) {
             fprintf(stderr, "cannot read /proc/%d/maps\n", pid);
             return 1;
@@ -202,8 +221,26 @@ int main(int argc, char *argv[])
         printf(ov ? "VISIBLE in maps (bad)\n" : "INVISIBLE in maps (ok)\n");
         break;
     }
+    case 'n': {
+        /* 分配 + 自校验：验证幽灵块整区间在 maps 中不可见 */
+        long ret = prctl(PR_GHOSTMEM_ALLOC, pid, nr_pages, 0, 0);
+        if (ret < 0) {
+            fprintf(stderr, "ALLOC failed: %s (errno=%d)\n", strerror(errno), errno);
+            return 1;
+        }
+        {
+            unsigned long block_len = nr_pages * 4096;
+            int ov = range_in_maps(pid, ret, block_len);
+            printf("alloc 0x%lx (%lu pages): %s\n", ret, nr_pages,
+                   ov ? "VISIBLE (bad)" : "INVISIBLE (ok)");
+            /* 校验完释放 */
+            prctl(PR_GHOSTMEM_FREE, pid, ret, 0, 0);
+        }
+        break;
+    }
     default:
         break;
     }
     return 0;
 }
+#endif /* GHOSTMEM_CLIENT_UNIT_TEST */
