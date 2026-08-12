@@ -52,3 +52,7 @@ add_test(NAME vma_offset_test COMMAND vma_offset_test)
 # wxshadow VMA vm_mm 偏移检测逻辑
 add_executable(wxshadow_vma_offset_test tests/wxshadow_vma_offset_test.c)
 add_test(NAME wxshadow_vma_offset_test COMMAND wxshadow_vma_offset_test)
+
+# wxshadow task comm 偏移搜索逻辑
+add_executable(wxshadow_comm_offset_test tests/wxshadow_comm_offset_test.c)
+add_test(NAME wxshadow_comm_offset_test COMMAND wxshadow_comm_offset_test)
