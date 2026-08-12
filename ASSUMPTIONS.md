@@ -33,3 +33,4 @@
 - **rustFrida host 测试副本**（Iteration 61-62）：`host-tests/src/` 与 `trace-decoder/src/lz4_block.rs` 是 agent 模块的**同步副本**（独立 `[workspace]` + 子目录 `.cargo/config.toml` 覆盖根 android target）。agent 侧修改后须运行 `host-tests/sync.sh` 同步，否则副本漂移。
 - **trace-decoder 独立于 workspace**（Iteration 61）：从根 workspace members 移除，避免根 `.cargo/config.toml` 的 `[build] target = aarch64-linux-android` 强制 NDK linker。
 - **prctl 常量四副本**（内核头/client/ghostlinker/rustFrida）：ABI 测试自动锁定（ghostmem_abi_test 17 断言 + wxshadow_abi_test 8 断言）。
+- **可复现性已验证**（Iteration 92）：`git archive` 全新检出后一键测试全绿（mkpms 19 套件 + rustFrida host-tests 10）——不依赖本地陈旧构建产物。
