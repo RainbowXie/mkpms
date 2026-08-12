@@ -1,7 +1,7 @@
 # ART 层特征隐蔽调研与设计（方案 #6）
 
 > 目标：隐藏 ART（Android Runtime）Hook 产生的运行时特征，对抗企业壳的 ART 内部检测。
-> 现状：rustFrida 无独立 ART hook 模块（`cleanup_java_hooks` 为占位）；`hide_soinfo.c` 已覆盖 soinfo 链摘除（dl_iterate_phdr 对抗）。
+> 现状：rustFrida 已有 ART 控制器（`art_controller.rs`：ArtMethod 替换、OAT quick-method-header 隐藏、GC 同步钩子、`java._initArtController` + stealth 开关）；`hide_soinfo.c` 覆盖 soinfo 链摘除。本设计文档补充 entrypoint 扫描与幽灵内存跳板接入的细化方案。
 
 ## 1. 检测面分析
 
@@ -72,7 +72,8 @@ JNI (native)                       ghostmem 模块
 | 项 | 状态 |
 |----|------|
 | soinfo 摘除（dl_iterate_phdr 对抗） | ✅ rustFrida `hide_soinfo.c` |
-| ArtMethod entrypoint 扫描/hook 模块 | ⏳ 未实现（本设计为起点） |
+| ART 控制器（ArtMethod 替换/OAT 隐藏/GC 钩子） | ✅ 已有 `quickjs-hook/src/jsapi/java/art_controller.rs`（788 行） |
+| `java._initArtController` + stealth 开关 | ✅ 已有（`java` JS 对象） |
 | 跳板落幽灵内存 | ✅ 前置就绪（ghostmem + stealth callbacks） |
 | 真机验证 | ⏳ 需 APatch 环境 |
 
