@@ -84,3 +84,7 @@ add_test(NAME wxshadow_dcache_flush_test COMMAND wxshadow_dcache_flush_test)
 # wxshadow mm_get_asid（ASID 提取）
 add_executable(wxshadow_asid_test tests/wxshadow_asid_test.c)
 add_test(NAME wxshadow_asid_test COMMAND wxshadow_asid_test)
+
+# wxshadow icache flush 回退逻辑
+add_executable(wxshadow_icache_flush_test tests/wxshadow_icache_flush_test.c)
+add_test(NAME wxshadow_icache_flush_test COMMAND wxshadow_icache_flush_test)
