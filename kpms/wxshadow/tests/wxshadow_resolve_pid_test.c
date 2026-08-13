@@ -24,12 +24,12 @@ static void *current_mm = (void *)0x111;
 static int find_result = 1; /* 1=找到 task, 0=不存在 */
 static void *task_mm = (void *)0x222;
 static void *stub_find_task(pid_t p) { (void)p; return find_result ? (void *)0x777 : NULL; }
-static void *stub_get_task_mm(void *t) { return t ? task_mm : NULL; }
+static void *stub_get_task_mm(void *t) { return t == current_mm ? current_mm : (t ? task_mm : NULL); }
 static void stub_rcu_lock(void) { rcu_lock_count++; }
 static void stub_rcu_unlock(void) { rcu_unlock_count++; }
 #define kfunc_get_task_mm stub_get_task_mm
 #define kfunc_rcu_read_lock stub_rcu_lock
-#define kfunc_rcu_read_unlock stub_rcu_unlock
+#define kfunc_rcu_unlock stub_rcu_unlock
 
 /* 同步自 wxshadow_bp.c */
 static void *resolve_pid_to_mm(pid_t pid)
