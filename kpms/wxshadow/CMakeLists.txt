@@ -72,3 +72,7 @@ add_test(NAME wxshadow_copy_from_user_pte_test COMMAND wxshadow_copy_from_user_p
 # wxshadow get_user_pte 页表遍历（4/3 级 + 失败分支）
 add_executable(wxshadow_get_user_pte_test tests/wxshadow_get_user_pte_test.c)
 add_test(NAME wxshadow_get_user_pte_test COMMAND wxshadow_get_user_pte_test)
+
+# wxshadow try_split_pmd（THP 分裂判定）
+add_executable(wxshadow_try_split_pmd_test tests/wxshadow_try_split_pmd_test.c)
+add_test(NAME wxshadow_try_split_pmd_test COMMAND wxshadow_try_split_pmd_test)
