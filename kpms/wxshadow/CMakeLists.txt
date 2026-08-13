@@ -104,3 +104,7 @@ add_test(NAME wxshadow_find_page_test COMMAND wxshadow_find_page_test)
 # wxshadow 页内断点查找
 add_executable(wxshadow_find_bp_test tests/wxshadow_find_bp_test.c)
 add_test(NAME wxshadow_find_bp_test COMMAND wxshadow_find_bp_test)
+
+# wxshadow 脏位图范围置位
+add_executable(wxshadow_bitmap_test tests/wxshadow_bitmap_test.c)
+add_test(NAME wxshadow_bitmap_test COMMAND wxshadow_bitmap_test)
