@@ -80,3 +80,7 @@ add_test(NAME wxshadow_try_split_pmd_test COMMAND wxshadow_try_split_pmd_test)
 # wxshadow dcache flush 行遍历逻辑
 add_executable(wxshadow_dcache_flush_test tests/wxshadow_dcache_flush_test.c)
 add_test(NAME wxshadow_dcache_flush_test COMMAND wxshadow_dcache_flush_test)
+
+# wxshadow mm_get_asid（ASID 提取）
+add_executable(wxshadow_asid_test tests/wxshadow_asid_test.c)
+add_test(NAME wxshadow_asid_test COMMAND wxshadow_asid_test)
