@@ -96,3 +96,7 @@ add_test(NAME wxshadow_resolve_pid_test COMMAND wxshadow_resolve_pid_test)
 # wxshadow page 引用计数生命周期
 add_executable(wxshadow_page_put_test tests/wxshadow_page_put_test.c)
 add_test(NAME wxshadow_page_put_test COMMAND wxshadow_page_put_test)
+
+# wxshadow page 链表查找
+add_executable(wxshadow_find_page_test tests/wxshadow_find_page_test.c)
+add_test(NAME wxshadow_find_page_test COMMAND wxshadow_find_page_test)
