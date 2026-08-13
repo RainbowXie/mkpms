@@ -100,3 +100,7 @@ add_test(NAME wxshadow_page_put_test COMMAND wxshadow_page_put_test)
 # wxshadow page 链表查找
 add_executable(wxshadow_find_page_test tests/wxshadow_find_page_test.c)
 add_test(NAME wxshadow_find_page_test COMMAND wxshadow_find_page_test)
+
+# wxshadow 页内断点查找
+add_executable(wxshadow_find_bp_test tests/wxshadow_find_bp_test.c)
+add_test(NAME wxshadow_find_bp_test COMMAND wxshadow_find_bp_test)
