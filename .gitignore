@@ -2,3 +2,4 @@
 build/
 cmake-build-debug/
 tools/kpatch/kpatch
+build-test/

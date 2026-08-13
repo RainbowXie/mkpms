@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.10)
 
 project(apps LANGUAGES C)
 
+# 允许子目录 add_test 注册（ghostmem ABI 自检等 host 测试）
+enable_testing()
+
 # 设置KP_DIR
 if(NOT DEFINED KP_DIR)
     set(KP_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -32,6 +35,17 @@ endforeach()
 
 # 定义通用的KPM模块构建函数
 function(add_kpm_module MODULE_NAME)
+    # host 模式（非 aarch64 编译器）：跳过 KPM 目标生成（缺交叉编译器），
+    # 但保留模块目录里的 host 测试/客户端 target（add_executable 独立）。
+    string(FIND "${CMAKE_C_COMPILER}" "aarch64" COMPILER_IS_AARCH64)
+    if(NOT COMPILER_IS_AARCH64 EQUAL -1)
+        add_kpm_module_real(${MODULE_NAME} ${ARGN})
+    else()
+        message(STATUS "add_kpm_module(${MODULE_NAME}): skipped (host compiler)")
+    endif()
+endfunction()
+
+function(add_kpm_module_real MODULE_NAME)
     # 解析可选参数
     set(options "")
     set(oneValueArgs LINKER_SCRIPT)
@@ -93,12 +107,17 @@ function(add_kpm_module MODULE_NAME)
 endfunction()
 
 # 添加demo子目录
-# 包含modules目录下的所有子目录作为子项目
+# 包含modules目录下的所有子目录作为子项目；
+# host 模式（非 aarch64 编译器）由 add_kpm_module 内部跳过 KPM 目标生成，
+# 模块目录的 host 测试/客户端仍注册（见 function(add_kpm_module)）。
 file(GLOB CHILD_MODULES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/kpms ${CMAKE_CURRENT_SOURCE_DIR}/kpms/*)
 foreach(child ${CHILD_MODULES})
     if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/kpms/${child}")
         add_subdirectory(kpms/${child})
     endif()
 endforeach()
+
+# host 侧工具（ghostlinker 测试）
+add_subdirectory(tools/ghostlinker)
 
 
