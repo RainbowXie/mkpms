@@ -68,3 +68,7 @@ add_test(NAME wxshadow_vdso_test COMMAND wxshadow_vdso_test)
 # wxshadow copy_from_user_via_pte 页边界检查
 add_executable(wxshadow_copy_from_user_pte_test tests/wxshadow_copy_from_user_pte_test.c)
 add_test(NAME wxshadow_copy_from_user_pte_test COMMAND wxshadow_copy_from_user_pte_test)
+
+# wxshadow get_user_pte 页表遍历（4/3 级 + 失败分支）
+add_executable(wxshadow_get_user_pte_test tests/wxshadow_get_user_pte_test.c)
+add_test(NAME wxshadow_get_user_pte_test COMMAND wxshadow_get_user_pte_test)
