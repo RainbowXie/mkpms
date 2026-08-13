@@ -88,3 +88,7 @@ add_test(NAME wxshadow_asid_test COMMAND wxshadow_asid_test)
 # wxshadow icache flush 回退逻辑
 add_executable(wxshadow_icache_flush_test tests/wxshadow_icache_flush_test.c)
 add_test(NAME wxshadow_icache_flush_test COMMAND wxshadow_icache_flush_test)
+
+# wxshadow resolve_pid_to_mm（pid→mm + RCU 配对）
+add_executable(wxshadow_resolve_pid_test tests/wxshadow_resolve_pid_test.c)
+add_test(NAME wxshadow_resolve_pid_test COMMAND wxshadow_resolve_pid_test)
